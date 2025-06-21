@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import JobSearch from './JobSearch';
 import JobCard from './JobCard';
-import { getJobs, Job } from '../services/jobService';
+import { searchJobs, Job, getJobs } from '../services/jobService';
 
 const JobList = () => {
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -11,8 +11,7 @@ const JobList = () => {
   const fetchJobs = async (filters?: { keyword: string; location: string; type: string }) => {
     try {
       setLoading(true);
-      // TODO: Implement filtering when backend is ready
-      const data = await getJobs();
+      const data = filters ? await searchJobs(filters.keyword, filters.location, filters.type) : await getJobs();
       setJobs(data);
       setError(null);
     } catch (err) {
