@@ -1,6 +1,0 @@
-com\jobseeker\controller\JobController.class
-com\jobseeker\config\FirebaseConfig.class
-com\jobseeker\service\JobService.class
-com\jobseeker\JobSeekerApplication$1.class
-com\jobseeker\model\Job.class
-com\jobseeker\JobSeekerApplication.class
