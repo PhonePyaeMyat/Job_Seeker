@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_URL = 'http://localhost:8080/api/jobs';
+const API_URL = 'http://localhost:3001/jobs';
 const API_KEY = 'CHANGE_ME_TO_A_SECRET_KEY';
 
 export interface Job {
