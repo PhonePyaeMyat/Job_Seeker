@@ -2,6 +2,7 @@ const express = require('express');
 const admin = require('firebase-admin');
 const fs = require('fs');
 const path = require('path');
+const cors = require('cors');
 
 // Load Firebase credentials
 const serviceAccountPath = path.join(__dirname, 'firebase-credentials.json');
@@ -19,6 +20,7 @@ const jobsCollection = db.collection('jobs');
 
 const app = express();
 app.use(express.json());
+app.use(cors({ origin: 'http://localhost:3000' }));
 
 // Create a new job
 app.post('/jobs', async (req, res) => {

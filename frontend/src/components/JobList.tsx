@@ -16,14 +16,20 @@ const JobList = () => {
   const fetchJobs = async (pageNum = 0, filtersArg = filters) => {
     try {
       setLoading(true);
-      let data: PaginatedJobs;
+      let data;
       if (filtersArg) {
         data = await searchJobs(filtersArg.keyword, filtersArg.location, filtersArg.type, pageNum, size);
       } else {
         data = await getJobs(pageNum, size);
       }
-      setJobs(data.jobs);
-      setTotal(data.total);
+      // Handle both array and object responses
+      if (Array.isArray(data)) {
+        setJobs(data);
+        setTotal(data.length);
+      } else {
+        setJobs(data.jobs || []);
+        setTotal(data.total || 0);
+      }
       setError(null);
     } catch (err) {
       setError('Failed to load jobs. Please try again later.');
