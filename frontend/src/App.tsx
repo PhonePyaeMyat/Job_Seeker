@@ -4,7 +4,6 @@ import JobList from './components/JobList';
 import JobForm from './components/JobForm';
 import SignUp from './pages/SignUp';
 import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
 import JobSeekerDashboard from './pages/JobSeekerDashboard';
 import EmployerDashboard from './pages/EmployerDashboard';
 import Profile from './pages/Profile';
@@ -24,10 +23,10 @@ function App() {
   const role = localStorage.getItem('role') || 'jobseeker';
   if (loading) return <div>Loading...</div>;
   return (
-    <>
+    <Router>
       <Header />
       <main>
-        <Router>
+        
           <Routes>
             <Route path="/" element={<JobList />} />
             <Route path="/jobs/:id" element={<JobDetails />} />
@@ -39,11 +38,10 @@ function App() {
             <Route path="/admin" element={user ? <AdminPanel /> : <Navigate to="/login" />} />
             <Route path="/500" element={<ServerError />} />
             <Route path="*" element={<NotFound />} />
-          </Routes>
-        </Router>
+          </Routes> 
       </main>
       <Footer />
-    </>
+    </Router>
   );
 }
 
