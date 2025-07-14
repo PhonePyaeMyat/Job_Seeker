@@ -14,9 +14,7 @@ import { auth } from './firebaseConfig';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import Header from './components/Header';
 import Footer from './components/Footer';
-
-// Placeholder for JobDetails component
-const JobDetails = () => <div className="container mx-auto p-4">Job Details Page (to be implemented)</div>;
+import JobDetails from './components/JobDetails';
 
 function App() {
   const [user, loading] = useAuthState(auth);

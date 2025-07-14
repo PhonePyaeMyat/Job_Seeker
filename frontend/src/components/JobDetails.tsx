@@ -25,11 +25,13 @@ const JobDetails: React.FC = () => {
   const [job, setJob] = useState<Job | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [applied, setApplied] = useState(false);
+  const [applyMsg, setApplyMsg] = useState('');
 
   useEffect(() => {
     setLoading(true);
     setError(null);
-    axios.get(`/api/jobs/${id}`)
+    axios.get('http://localhost:3001/jobs/' + id)
       .then(res => {
         setJob(res.data);
         setLoading(false);
@@ -39,6 +41,18 @@ const JobDetails: React.FC = () => {
         setLoading(false);
       });
   }, [id]);
+
+  const handleApply = async () => {
+    try {
+      // Replace with real user ID from auth in a real app
+      const userId = localStorage.getItem('userId') || 'demoUser';
+      await axios.post(`http://localhost:3001/jobs/${id}/apply`, { userId });
+      setApplied(true);
+      setApplyMsg('You have successfully applied for this job!');
+    } catch (err) {
+      setApplyMsg('Failed to apply. Please try again.');
+    }
+  };
 
   if (loading) return <div className="p-8 text-center">Loading...</div>;
   if (error) return <div className="p-8 text-center text-red-500">{error}</div>;
@@ -72,6 +86,16 @@ const JobDetails: React.FC = () => {
       </div>
       <div className="text-sm text-gray-500">
         Posted: {new Date(job.postedDate).toLocaleDateString()} | Expires: {new Date(job.expiryDate).toLocaleDateString()}
+      </div>
+      <div className="mt-6">
+        <button
+          className="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 disabled:opacity-50"
+          onClick={handleApply}
+          disabled={applied}
+        >
+          {applied ? 'Applied' : 'Apply Now'}
+        </button>
+        {applyMsg && <div className="text-green-600 mt-2">{applyMsg}</div>}
       </div>
     </div>
   );

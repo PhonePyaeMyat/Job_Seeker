@@ -78,6 +78,76 @@ app.delete('/jobs/:id', async (req, res) => {
   }
 });
 
+// Search jobs with filters and pagination
+app.get('/jobs/search', async (req, res) => {
+  try {
+    const { keyword = '', location = '', type = '', page = 0, size = 10 } = req.query;
+    let query = jobsCollection;
+
+    // Firestore can only filter on indexed fields, so we filter location and type in query
+    if (location) {
+      query = query.where('location', '==', location);
+    }
+    if (type) {
+      query = query.where('type', '==', type);
+    }
+
+    const snapshot = await query.get();
+    let jobs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+    // Keyword search (in-memory, since Firestore doesn't support OR text search)
+    if (keyword) {
+      const lowerKeyword = keyword.toLowerCase();
+      jobs = jobs.filter(job =>
+        (job.title && job.title.toLowerCase().includes(lowerKeyword)) ||
+        (job.description && job.description.toLowerCase().includes(lowerKeyword))
+      );
+    }
+
+    // Pagination
+    const pageNum = parseInt(page, 10) || 0;
+    const pageSize = parseInt(size, 10) || 10;
+    const start = pageNum * pageSize;
+    const paginatedJobs = jobs.slice(start, start + pageSize);
+
+    res.json({
+      jobs: paginatedJobs,
+      total: jobs.length,
+      page: pageNum,
+      size: pageSize
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Apply to a job
+app.post('/jobs/:id/apply', async (req, res) => {
+  try {
+    const jobId = req.params.id;
+    const { userId } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ error: 'Missing userId' });
+    }
+
+    const jobRef = jobsCollection.doc(jobId);
+    const jobDoc = await jobRef.get();
+    if (!jobDoc.exists) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    // Add userId to applicants array (if not already applied)
+    await jobRef.update({
+      applicants: admin.firestore.FieldValue.arrayUnion(userId)
+    });
+
+    res.json({ message: 'Application successful' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
