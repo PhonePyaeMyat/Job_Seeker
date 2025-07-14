@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { useAuthState } from 'react-firebase-hooks/auth';
+import { auth } from '../firebaseConfig';
 
 interface Job {
   id: string;
@@ -27,6 +29,8 @@ const JobDetails: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [applied, setApplied] = useState(false);
   const [applyMsg, setApplyMsg] = useState('');
+  const [user, userLoading] = useAuthState(auth);
+  const navigate = useNavigate();
 
   useEffect(() => {
     setLoading(true);
@@ -43,9 +47,12 @@ const JobDetails: React.FC = () => {
   }, [id]);
 
   const handleApply = async () => {
+    if (!user) {
+      navigate('/login');
+      return;
+    }
     try {
-      // Replace with real user ID from auth in a real app
-      const userId = localStorage.getItem('userId') || 'demoUser';
+      const userId = user.uid;
       await axios.post(`http://localhost:3001/jobs/${id}/apply`, { userId });
       setApplied(true);
       setApplyMsg('You have successfully applied for this job!');
@@ -91,7 +98,7 @@ const JobDetails: React.FC = () => {
         <button
           className="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 disabled:opacity-50"
           onClick={handleApply}
-          disabled={applied}
+          disabled={applied || userLoading}
         >
           {applied ? 'Applied' : 'Apply Now'}
         </button>
