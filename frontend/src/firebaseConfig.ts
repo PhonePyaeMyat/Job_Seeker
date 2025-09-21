@@ -4,12 +4,13 @@ import { getFirestore } from 'firebase/firestore';
 
 // Firebase configuration
 const firebaseConfig = {
-  apiKey: process.env.REACT_APP_FIREBASE_API_KEY || "your-api-key",
-  authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN || "your-project.firebaseapp.com",
-  projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID || "your-project-id",
-  storageBucket: process.env.REACT_APP_FIREBASE_STORAGE_BUCKET || "your-project.appspot.com",
-  messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID || "123456789",
-  appId: process.env.REACT_APP_FIREBASE_APP_ID || "your-app-id"
+  apiKey: "AIzaSyA_Eh7PP_HlZMVX52hJoRWEDfp9Zzrkr2E",
+  authDomain: "job-seeker-80fd8.firebaseapp.com",
+  projectId: "job-seeker-80fd8",
+  storageBucket: "job-seeker-80fd8.firebasestorage.app",
+  messagingSenderId: "329214472410",
+  appId: "1:329214472410:web:1cae5cc2558904e190b5e3",
+  measurementId: "G-1Y40DBXGYQ"
 };
 
 // Initialize Firebase
