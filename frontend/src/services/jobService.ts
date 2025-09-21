@@ -1,7 +1,10 @@
 import axios from 'axios';
 
-const API_URL = 'http://localhost:3001/jobs';
-const API_KEY = 'CHANGE_ME_TO_A_SECRET_KEY';
+// Use Vercel API routes in production, local backend in development
+const API_URL = process.env.NODE_ENV === 'production' 
+  ? '/api/jobs' 
+  : (process.env.REACT_APP_API_URL || 'http://localhost:3001/jobs');
+const API_KEY = process.env.REACT_APP_API_KEY || 'CHANGE_ME_TO_A_SECRET_KEY';
 
 export interface Job {
   id: string;
@@ -16,7 +19,7 @@ export interface Job {
   experienceLevel: string;
   skills: string[];
   active: boolean;
-  companyId: string;
+  companyId?: string;
   applicants: string[];
 }
 
@@ -36,9 +39,11 @@ export const getJobById = async (id: string): Promise<Job> => {
 };
 
 export const searchJobs = async (keyword: string, location: string, type: string, page = 0, size = 10): Promise<PaginatedJobs> => {
+    console.log('searchJobs called with:', { keyword, location, type, page, size });
     const response = await axios.get(`${API_URL}/search`, {
         params: { keyword, location, type, page, size }
     });
+    console.log('searchJobs response:', response.data);
     return response.data;
 };
 

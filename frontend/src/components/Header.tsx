@@ -11,7 +11,6 @@ const Header: React.FC = () => {
         <Link to="/" className="text-2xl font-bold">Job Seeker</Link>
         <div className="flex gap-4 items-center">
           <Link to="/" className="hover:underline">Home</Link>
-          <Link to="/jobs" className="hover:underline">Jobs</Link>
           {user && <Link to="/profile" className="hover:underline">Profile</Link>}
           {user && <Link to="/dashboard" className="hover:underline">Dashboard</Link>}
           {user && <Link to="/admin" className="hover:underline">Admin</Link>}

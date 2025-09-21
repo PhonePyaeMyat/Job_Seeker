@@ -19,7 +19,11 @@ import JobDetails from './components/JobDetails';
 function App() {
   const [user, loading] = useAuthState(auth);
   const role = localStorage.getItem('role') || 'jobseeker';
-  if (loading) return <div>Loading...</div>;
+  if (loading) return (
+    <div className="flex justify-center items-center min-h-screen">
+      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+    </div>
+  );
   return (
     <Router>
       <Header />
@@ -27,6 +31,7 @@ function App() {
         
           <Routes>
             <Route path="/" element={<JobList />} />
+            <Route path="/jobs" element={<JobList />} />
             <Route path="/jobs/:id" element={<JobDetails />} />
             <Route path="/post-job" element={<JobForm />} />
             <Route path="/signup" element={<SignUp />} />

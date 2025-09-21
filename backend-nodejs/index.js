@@ -5,22 +5,51 @@ const path = require('path');
 const cors = require('cors');
 
 // Load Firebase credentials
-const serviceAccountPath = path.join(__dirname, 'firebase-credentials.json');
-if (!fs.existsSync(serviceAccountPath)) {
-  console.error('Missing firebase-credentials.json. Please add your Firebase service account key.');
-  process.exit(1);
+let firebaseConfig;
+
+if (process.env.NODE_ENV === 'production') {
+  // For production, use environment variables
+  if (!process.env.FIREBASE_PRIVATE_KEY) {
+    console.error('Missing FIREBASE_PRIVATE_KEY environment variable.');
+    process.exit(1);
+  }
+  
+  firebaseConfig = {
+    credential: admin.credential.cert({
+      projectId: process.env.FIREBASE_PROJECT_ID,
+      clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+    }),
+  };
+} else {
+  // For development, use local file
+  const serviceAccountPath = path.join(__dirname, 'firebase-credentials.json');
+  if (!fs.existsSync(serviceAccountPath)) {
+    console.error('Missing firebase-credentials.json. Please add your Firebase service account key.');
+    process.exit(1);
+  }
+  
+  firebaseConfig = {
+    credential: admin.credential.cert(require(serviceAccountPath)),
+  };
 }
 
-admin.initializeApp({
-  credential: admin.credential.cert(require(serviceAccountPath)),
-});
+admin.initializeApp(firebaseConfig);
 
 const db = admin.firestore();
 const jobsCollection = db.collection('jobs');
 
 const app = express();
 app.use(express.json());
-app.use(cors({ origin: 'http://localhost:3000' }));
+// Configure CORS for production and development
+const allowedOrigins = process.env.NODE_ENV === 'production' 
+  ? [process.env.FRONTEND_URL, 'https://your-frontend-domain.vercel.app'] // Replace with your actual frontend URL
+  : ['http://localhost:3000'];
+
+app.use(cors({ 
+  origin: allowedOrigins,
+  credentials: true 
+}));
 
 // Create a new job
 app.post('/jobs', async (req, res) => {
@@ -36,9 +65,24 @@ app.post('/jobs', async (req, res) => {
 // Get all jobs
 app.get('/jobs', async (req, res) => {
   try {
+    const { page = 0, size = 10 } = req.query;
+    const pageNum = parseInt(page, 10) || 0;
+    const pageSize = parseInt(size, 10) || 10;
+    
     const snapshot = await jobsCollection.get();
-    const jobs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    res.json(jobs);
+    const allJobs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    
+    // Pagination
+    const start = pageNum * pageSize;
+    const paginatedJobs = allJobs.slice(start, start + pageSize);
+    
+    console.log('All jobs:', allJobs.map(job => ({ id: job.id, title: job.title, type: job.type })));
+    res.json({
+      jobs: paginatedJobs,
+      total: allJobs.length,
+      page: pageNum,
+      size: pageSize
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -82,26 +126,35 @@ app.delete('/jobs/:id', async (req, res) => {
 app.get('/jobs/search', async (req, res) => {
   try {
     const { keyword = '', location = '', type = '', page = 0, size = 10 } = req.query;
-    let query = jobsCollection;
+    console.log('Search request with params:', { keyword, location, type, page, size });
+    
+    let jobs = [];
 
-    // Firestore can only filter on indexed fields, so we filter location and type in query
+    // Get all jobs first, then filter in memory to avoid Firestore index issues
+    const snapshot = await jobsCollection.get();
+    jobs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    console.log('Total jobs found:', jobs.length);
+
+    // Apply filters in memory
     if (location) {
-      query = query.where('location', '==', location);
+      jobs = jobs.filter(job => job.location && job.location.toLowerCase().includes(location.toLowerCase()));
+      console.log('After location filter:', jobs.length, 'jobs');
     }
+    
     if (type) {
-      query = query.where('type', '==', type);
+      jobs = jobs.filter(job => job.type === type);
+      console.log('After type filter:', jobs.length, 'jobs');
     }
 
-    const snapshot = await query.get();
-    let jobs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-    // Keyword search (in-memory, since Firestore doesn't support OR text search)
+    // Keyword search (in-memory)
     if (keyword) {
       const lowerKeyword = keyword.toLowerCase();
       jobs = jobs.filter(job =>
         (job.title && job.title.toLowerCase().includes(lowerKeyword)) ||
-        (job.description && job.description.toLowerCase().includes(lowerKeyword))
+        (job.description && job.description.toLowerCase().includes(lowerKeyword)) ||
+        (job.company && job.company.toLowerCase().includes(lowerKeyword))
       );
+      console.log('After keyword filter:', jobs.length, 'jobs');
     }
 
     // Pagination
@@ -117,6 +170,7 @@ app.get('/jobs/search', async (req, res) => {
       size: pageSize
     });
   } catch (error) {
+    console.error('Search error:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -149,6 +203,103 @@ app.post('/jobs/:id/apply', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3001;
+
+// Add sample jobs for testing
+const addSampleJobs = async () => {
+  try {
+    const sampleJobs = [
+      {
+        title: 'Full Stack Developer',
+        company: 'Tech Corp',
+        location: 'New York',
+        type: 'FULL_TIME',
+        salary: '$80,000 - $120,000',
+        description: 'We are looking for a Full Stack Developer with experience in React and Node.js.',
+        requirements: '3+ years of experience with React, Node.js, and TypeScript.',
+        experienceLevel: 'MID',
+        skills: ['React', 'Node.js', 'TypeScript', 'MongoDB'],
+        active: true,
+        postedDate: new Date().toISOString(),
+        expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        applicants: [],
+        companyId: 'tech-corp-001'
+      },
+      {
+        title: 'Frontend Engineer',
+        company: 'Startup Inc',
+        location: 'San Francisco',
+        type: 'FULL_TIME',
+        salary: '$90,000 - $130,000',
+        description: 'Join our team as a Frontend Engineer working with modern JavaScript frameworks.',
+        requirements: 'Experience with React, Vue.js, or Angular. Knowledge of CSS and responsive design.',
+        experienceLevel: 'SENIOR',
+        skills: ['React', 'Vue.js', 'CSS', 'JavaScript'],
+        active: true,
+        postedDate: new Date().toISOString(),
+        expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        applicants: [],
+        companyId: 'startup-inc-001'
+      },
+      {
+        title: 'Backend Developer',
+        company: 'Enterprise Solutions',
+        location: 'Remote',
+        type: 'CONTRACT',
+        salary: '$70,000 - $100,000',
+        description: 'Backend developer needed for API development and database management.',
+        requirements: 'Experience with Node.js, Express, and PostgreSQL.',
+        experienceLevel: 'MID',
+        skills: ['Node.js', 'Express', 'PostgreSQL', 'REST APIs'],
+        active: true,
+        postedDate: new Date().toISOString(),
+        expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        applicants: [],
+        companyId: 'enterprise-solutions-001'
+      },
+      {
+        title: 'Part-time Web Developer',
+        company: 'Small Business Inc',
+        location: 'Chicago',
+        type: 'PART_TIME',
+        salary: '$40,000 - $60,000',
+        description: 'Part-time web developer needed for website maintenance and updates.',
+        requirements: 'Experience with HTML, CSS, JavaScript, and basic PHP.',
+        experienceLevel: 'ENTRY',
+        skills: ['HTML', 'CSS', 'JavaScript', 'PHP'],
+        active: true,
+        postedDate: new Date().toISOString(),
+        expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        applicants: [],
+        companyId: 'small-business-inc-001'
+      },
+      {
+        title: 'Software Engineering Intern',
+        company: 'Tech Startup',
+        location: 'Austin',
+        type: 'INTERNSHIP',
+        salary: '$25,000 - $35,000',
+        description: 'Internship opportunity for software engineering students.',
+        requirements: 'Currently enrolled in Computer Science or related field.',
+        experienceLevel: 'ENTRY',
+        skills: ['Java', 'Python', 'Git', 'Agile'],
+        active: true,
+        postedDate: new Date().toISOString(),
+        expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        applicants: [],
+        companyId: 'tech-startup-001'
+      }
+    ];
+
+    for (const job of sampleJobs) {
+      await jobsCollection.add(job);
+    }
+    console.log('Sample jobs added successfully');
+  } catch (error) {
+    console.log('Sample jobs already exist or error:', error.message);
+  }
+};
+
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
+  addSampleJobs(); // Add sample jobs when server starts
 }); 

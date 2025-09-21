@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import JobSearch from './JobSearch';
 import JobCard from './JobCard';
+import BackendStatus from './BackendStatus';
 import { searchJobs, Job, getJobs, PaginatedJobs } from '../services/jobService';
 import { Link } from 'react-router-dom';
 
@@ -16,24 +17,28 @@ const JobList = () => {
   const fetchJobs = async (pageNum = 0, filtersArg = filters) => {
     try {
       setLoading(true);
+      console.log('Fetching jobs...', { pageNum, filtersArg });
+      
       let data;
       if (filtersArg) {
         data = await searchJobs(filtersArg.keyword, filtersArg.location, filtersArg.type, pageNum, size);
       } else {
         data = await getJobs(pageNum, size);
       }
-      // Handle both array and object responses
-      if (Array.isArray(data)) {
-        setJobs(data);
-        setTotal(data.length);
-      } else {
-        setJobs(data.jobs || []);
-        setTotal(data.total || 0);
-      }
+      
+      console.log('Jobs data received:', data);
+      
+      // Handle paginated response
+      setJobs(data.jobs || []);
+      setTotal(data.total || 0);
       setError(null);
-    } catch (err) {
-      setError('Failed to load jobs. Please try again later.');
+    } catch (err: any) {
       console.error('Error fetching jobs:', err);
+      if (err.code === 'ECONNREFUSED' || err.message.includes('Network Error')) {
+        setError('Cannot connect to server. Please make sure the backend is running on http://localhost:3001');
+      } else {
+        setError(`Failed to load jobs: ${err.message}`);
+      }
     } finally {
       setLoading(false);
     }
@@ -45,6 +50,7 @@ const JobList = () => {
   }, [page]);
 
   const handleSearch = (filtersObj: { keyword: string; location: string; type: string }) => {
+    console.log('Search triggered with filters:', filtersObj);
     setFilters(filtersObj);
     setPage(0);
     fetchJobs(0, filtersObj);
@@ -82,6 +88,8 @@ const JobList = () => {
   return (
     <div className="container mx-auto px-4 py-8">
       <h1 className="text-3xl font-bold text-gray-800 mb-8">Find Your Dream Job</h1>
+      
+      <BackendStatus />
       
       <JobSearch onSearch={handleSearch} />
       

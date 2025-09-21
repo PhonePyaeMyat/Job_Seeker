@@ -1,0 +1,16 @@
+{
+  "name": "job-seeker-app",
+  "version": "1.0.0",
+  "description": "Full-stack job search platform",
+  "scripts": {
+    "build": "cd frontend && npm run build",
+    "dev": "concurrently \"cd backend-nodejs && npm run dev\" \"cd frontend && npm start\"",
+    "install-all": "npm install && cd frontend && npm install && cd ../backend-nodejs && npm install"
+  },
+  "dependencies": {
+    "firebase-admin": "^11.10.1"
+  },
+  "devDependencies": {
+    "concurrently": "^7.6.0"
+  }
+}
