@@ -4,7 +4,7 @@ import axios from 'axios';
 const API_URL = process.env.NODE_ENV === 'production' 
   ? 'https://us-central1-job-seeker-80fd8.cloudfunctions.net/api/jobs' 
   : (process.env.REACT_APP_API_URL || 'http://localhost:5001/job-seeker-80fd8/us-central1/api/jobs');
-const API_KEY = process.env.REACT_APP_API_KEY || 'AIzaSyA_Eh7PP_HlZMVX52hJoRWEDfp9Zzrkr2E';
+const API_KEY = process.env.REACT_APP_API_KEY;
 
 export interface Job {
   id: string;
@@ -48,6 +48,9 @@ export const searchJobs = async (keyword: string, location: string, type: string
 };
 
 export const postJob = async (job: Partial<Job>) => {
+    if (!API_KEY) {
+        throw new Error('API key not configured. Please set REACT_APP_API_KEY environment variable.');
+    }
     const response = await axios.post(API_URL, job, {
         headers: { Authorization: API_KEY }
     });
@@ -55,6 +58,9 @@ export const postJob = async (job: Partial<Job>) => {
 };
 
 export const updateJob = async (id: string, job: Partial<Job>) => {
+    if (!API_KEY) {
+        throw new Error('API key not configured. Please set REACT_APP_API_KEY environment variable.');
+    }
     const response = await axios.put(`${API_URL}/${id}`, job, {
         headers: { Authorization: API_KEY }
     });
@@ -62,6 +68,9 @@ export const updateJob = async (id: string, job: Partial<Job>) => {
 };
 
 export const deleteJob = async (id: string) => {
+    if (!API_KEY) {
+        throw new Error('API key not configured. Please set REACT_APP_API_KEY environment variable.');
+    }
     const response = await axios.delete(`${API_URL}/${id}`, {
         headers: { Authorization: API_KEY }
     });
