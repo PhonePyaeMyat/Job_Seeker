@@ -4,9 +4,9 @@ const Profile: React.FC = () => {
   const role = localStorage.getItem('role') || 'jobseeker';
   const [name, setName] = useState('');
   const [skills, setSkills] = useState('');
-  const [resume, setResume] = useState<File | null>(null);
+  const [, setResume] = useState<File | null>(null);
   const [companyName, setCompanyName] = useState('');
-  const [logo, setLogo] = useState<File | null>(null);
+  const [, setLogo] = useState<File | null>(null);
   const [description, setDescription] = useState('');
 
   const handleResumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {

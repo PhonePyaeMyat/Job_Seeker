@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import JobSearch from './JobSearch';
 import JobCard from './JobCard';
 import BackendStatus from './BackendStatus';
-import { searchJobs, Job, getJobs, PaginatedJobs } from '../services/jobService';
+import { searchJobs, Job, getJobs } from '../services/jobService';
 import { Link } from 'react-router-dom';
 
 const JobList = () => {
