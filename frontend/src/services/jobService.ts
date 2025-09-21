@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // Use Firebase Functions in production, local emulator in development
 const API_URL = process.env.NODE_ENV === 'production' 
-  ? 'https://us-central1-your-firebase-project-id.cloudfunctions.net/api/jobs' 
+  ? 'https://us-central1-job-seeker-80fd8.cloudfunctions.net/api/jobs' 
   : (process.env.REACT_APP_API_URL || 'http://localhost:5001/job-seeker-80fd8/us-central1/api/jobs');
 const API_KEY = process.env.REACT_APP_API_KEY || 'CHANGE_ME_TO_A_SECRET_KEY';
 
