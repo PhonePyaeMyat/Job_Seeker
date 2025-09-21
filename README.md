@@ -1,5 +1,5 @@
 # Job_Seeker
-A full-stack job search platform built with React.js (TypeScript), Node.js (Express), and Firebase Firestore.
+A full-stack job search platform built with React.js (TypeScript), Firebase Functions, and Firebase Firestore.
 
 ## Features
 
@@ -8,6 +8,7 @@ A full-stack job search platform built with React.js (TypeScript), Node.js (Expr
 - Job posting (protected endpoint)
 - Responsive design with Tailwind CSS
 - Real-time database with Firebase Firestore
+- Deployed on Firebase Hosting and Functions
 
 ## Tech Stack
 
@@ -15,82 +16,96 @@ A full-stack job search platform built with React.js (TypeScript), Node.js (Expr
 - React.js (TypeScript)
 - Tailwind CSS for styling
 - Axios for API requests
+- Firebase Hosting for deployment
 
 ### Backend
-- Node.js with Express
+- Firebase Functions (Node.js/Express)
 - Firebase Admin SDK for Firestore
 - CORS for cross-origin requests
 
-### Database
+### Database & Infrastructure
 - Firebase Firestore (NoSQL database)
+- Firebase Functions for serverless backend
+- Firebase Hosting for frontend deployment
 
 ## Project Structure
 
 ```
 Job_Seeker/
+├── functions/                 # Firebase Functions (backend API)
+│   ├── index.js              # Main functions file
+│   └── package.json
 ├── frontend/                  # React frontend application
 │   ├── src/
 │   │   ├── components/       # React components
 │   │   ├── pages/            # Page components
 │   │   └── services/         # API services
 │   └── package.json
-├── backend-nodejs/           # Node.js backend application
-│   ├── index.js              # Main server file
-│   └── package.json
+├── backend-nodejs/           # Legacy Node.js backend (optional)
+├── firebase.json             # Firebase configuration
+├── .firebaserc              # Firebase project settings
+├── firestore.rules          # Firestore security rules
 └── README.md
 ```
 
 ## Getting Started
 
 ### Prerequisites
-- Node.js (v14 or higher)
-- Firebase account (for Firestore)
+- Node.js (v18 or higher)
+- Firebase account and project
+- Firebase CLI (`npm install -g firebase-tools`)
+
+### Quick Start
+1. Install dependencies:
+   ```bash
+   npm run install-all
+   ```
+
+2. Configure Firebase:
+   - Update `.firebaserc` with your Firebase project ID
+   - Update `frontend/src/services/jobService.ts` with your project ID
+
+3. Deploy to Firebase:
+   ```bash
+   firebase deploy
+   ```
+
+For detailed setup instructions, see [FIREBASE_DEPLOYMENT.md](FIREBASE_DEPLOYMENT.md).
 
 ---
 
-## Frontend Setup
-1. Navigate to the frontend directory:
+## Local Development
+
+### Using Firebase Emulators
+1. Start Firebase emulators:
+   ```bash
+   firebase emulators:start
+   ```
+
+2. Start the frontend:
    ```bash
    cd frontend
-   ```
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-3. Start the development server:
-   ```bash
    npm start
    ```
-   The app will run at [http://localhost:3000](http://localhost:3000).
 
----
-
-## Backend Setup
-1. Navigate to the backend directory:
-   ```bash
-   cd backend-nodejs
-   ```
-2. Place your Firebase service account key as `firebase-credentials.json` in this directory (do NOT commit this file).
-3. Install dependencies:
-   ```bash
-   npm install
-   ```
-4. Start the backend server:
-   ```bash
-   npm start
-   ```
-   The backend will run at [http://localhost:3001](http://localhost:3001).
+The app will run at [http://localhost:3000](http://localhost:3000) with the backend API running on the Firebase Functions emulator.
 
 ---
 
 ## API Endpoints
 
-### Jobs
-- `GET /jobs` - Get all jobs
+After deployment, your API will be available at:
+- Production: `https://us-central1-your-project-id.cloudfunctions.net/api`
+- Local: `http://localhost:5001/your-project-id/us-central1/api`
+
+### Available Endpoints:
+- `GET /jobs` - Get all jobs with pagination
 - `GET /jobs/:id` - Get job by ID
 - `POST /jobs` - Create new job
 - `PUT /jobs/:id` - Update job
 - `DELETE /jobs/:id` - Delete job
+- `GET /jobs/search` - Search jobs with filters
+- `POST /jobs/:id/apply` - Apply to a job
 
 All endpoints interact with the `jobs` collection in Firebase Firestore.
 
@@ -98,14 +113,17 @@ All endpoints interact with the `jobs` collection in Firebase Firestore.
 
 ## Environment Variables & Security
 - **Frontend:** No sensitive keys should be committed. For production, secure any API keys or secrets.
-- **Backend:** Never commit `firebase-credentials.json` or real API keys. Use `.gitignore` to protect secrets.
-- **CORS:** The backend is configured to allow requests from `http://localhost:3000`.
+- **Functions:** Firebase Functions automatically handle authentication and environment variables.
+- **Firestore:** Security rules are configured in `firestore.rules` to protect your data.
+- **CORS:** Functions are configured to allow requests from your frontend domain.
 
 ---
 
-## .gitignore
-- Both frontend and backend are covered by a root `.gitignore` (see file for details).
-- Ensures `node_modules`, `.env`, and credentials are not committed.
+## Firebase Configuration
+- `firebase.json` - Main Firebase configuration for hosting and functions
+- `.firebaserc` - Firebase project settings
+- `firestore.rules` - Database security rules
+- `firestore.indexes.json` - Database indexes for optimal query performance
 
 ---
 
