@@ -12,8 +12,15 @@ const jobsCollection = db.collection('jobs');
 // Create Express app
 const app = express();
 
-// Configure CORS
-app.use(cors({ origin: true }));
+// Configure CORS for production and development
+const allowedOrigins = process.env.NODE_ENV === 'production' 
+  ? [process.env.FRONTEND_URL, 'https://job-seeker-80fd8.web.app'] // Replace with your actual frontend URL
+  : ['http://localhost:3000'];
+
+app.use(cors({ 
+  origin: allowedOrigins,
+  credentials: true 
+}));
 app.use(express.json());
 
 // Create a new job
@@ -90,20 +97,24 @@ app.delete('/jobs/:id', async (req, res) => {
 app.get('/jobs/search', async (req, res) => {
   try {
     const { keyword = '', location = '', type = '', page = 0, size = 10 } = req.query;
+    console.log('Search request with params:', { keyword, location, type, page, size });
     
     let jobs = [];
 
     // Get all jobs first, then filter in memory to avoid Firestore index issues
     const snapshot = await jobsCollection.get();
     jobs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    console.log('Total jobs found:', jobs.length);
 
     // Apply filters in memory
     if (location) {
       jobs = jobs.filter(job => job.location && job.location.toLowerCase().includes(location.toLowerCase()));
+      console.log('After location filter:', jobs.length, 'jobs');
     }
     
     if (type) {
       jobs = jobs.filter(job => job.type === type);
+      console.log('After type filter:', jobs.length, 'jobs');
     }
 
     // Keyword search (in-memory)
@@ -114,6 +125,7 @@ app.get('/jobs/search', async (req, res) => {
         (job.description && job.description.toLowerCase().includes(lowerKeyword)) ||
         (job.company && job.company.toLowerCase().includes(lowerKeyword))
       );
+      console.log('After keyword filter:', jobs.length, 'jobs');
     }
 
     // Pagination
@@ -253,10 +265,10 @@ exports.addSampleJobs = functions.https.onRequest(async (req, res) => {
     for (const job of sampleJobs) {
       await jobsCollection.add(job);
     }
-    
+    console.log('Sample jobs added successfully');
     res.json({ message: 'Sample jobs added successfully' });
   } catch (error) {
-    console.error('Error adding sample jobs:', error);
+    console.log('Sample jobs already exist or error:', error.message);
     res.status(500).json({ error: error.message });
   }
 });

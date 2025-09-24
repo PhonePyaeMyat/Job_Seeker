@@ -40,19 +40,18 @@ npm run install-all
 
 ### 2. Build Frontend
 ```bash
-cd frontend
 npm run build
-cd ..
 ```
 
 ### 3. Deploy to Firebase
 ```bash
 # Deploy everything
-firebase deploy
+npm run deploy
 
 # Or deploy individually
-firebase deploy --only hosting    # Deploy frontend
-firebase deploy --only functions  # Deploy backend functions
+npm run deploy:hosting    # Deploy frontend
+npm run deploy:functions  # Deploy backend functions
+npm run deploy:firestore  # Deploy Firestore rules
 ```
 
 ### 4. Set up Sample Data
@@ -63,9 +62,19 @@ https://your-project-id.cloudfunctions.net/addSampleJobs
 
 ## Local Development
 
-### 1. Start Firebase Emulators
+### 1. Start Development Environment
 ```bash
-firebase emulators:start
+# Start both frontend and functions emulators
+npm run dev
+
+# Or start individually
+npm run dev:frontend    # Start React frontend
+npm run dev:functions   # Start Firebase emulators
+```
+
+### 2. Start Firebase Emulators Only
+```bash
+npm run emulators
 ```
 
 This will start:
@@ -73,16 +82,10 @@ This will start:
 - Firestore emulator on port 8080
 - Hosting emulator on port 5000
 
-### 2. Update Environment Variables
+### 3. Update Environment Variables
 For local development, update the API URL in `frontend/src/services/jobService.ts`:
 ```typescript
 const API_URL = 'http://localhost:5001/your-project-id/us-central1/api/jobs';
-```
-
-### 3. Start Frontend
-```bash
-cd frontend
-npm start
 ```
 
 ## Environment Variables
@@ -106,12 +109,21 @@ The app includes basic Firestore security rules in `firestore.rules`. Review and
 ## Project Structure
 
 ```
-├── functions/           # Firebase Functions (backend API)
-├── frontend/           # React frontend app
-├── firebase.json       # Firebase configuration
-├── .firebaserc        # Firebase project settings
-├── firestore.rules    # Firestore security rules
-└── firestore.indexes.json # Firestore indexes
+job-seeker/
+├── .firebaserc              # Firebase project configuration
+├── firebase.json            # Firebase services configuration  
+├── firestore.rules         # Firestore security rules
+├── firestore.indexes.json  # Firestore indexes
+├── package.json            # Root package with helper scripts
+├── functions/              # Firebase Functions (your backend)
+│   ├── index.js           # API endpoints and business logic
+│   ├── package.json       # Functions dependencies
+│   └── .eslintrc.js      # Linting configuration
+└── frontend/              # React application
+    ├── src/               # React source code
+    ├── public/           # Static files
+    ├── package.json      # Frontend dependencies  
+    └── build/           # Built files (generated)
 ```
 
 ## API Endpoints

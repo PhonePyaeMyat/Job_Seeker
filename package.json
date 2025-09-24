@@ -1,15 +1,23 @@
 {
-  "name": "job-seeker-app",
+  "name": "job-seeker",
   "version": "1.0.0",
   "description": "Full-stack job search platform with Firebase",
   "scripts": {
     "build": "cd frontend && npm run build",
     "dev": "concurrently \"cd functions && npm run serve\" \"cd frontend && npm start\"",
+    "dev:frontend": "cd frontend && npm start",
+    "dev:functions": "cd functions && npm run serve",
     "install-all": "npm install && cd frontend && npm install && cd ../functions && npm install",
     "deploy": "firebase deploy",
     "deploy:hosting": "firebase deploy --only hosting",
     "deploy:functions": "firebase deploy --only functions",
-    "emulators": "firebase emulators:start"
+    "deploy:firestore": "firebase deploy --only firestore",
+    "emulators": "firebase emulators:start",
+    "emulators:functions": "firebase emulators:start --only functions",
+    "emulators:firestore": "firebase emulators:start --only firestore",
+    "lint": "cd functions && npm run lint",
+    "test": "cd frontend && npm test",
+    "clean": "rm -rf frontend/build && rm -rf functions/node_modules && rm -rf frontend/node_modules && rm -rf node_modules"
   },
   "dependencies": {
     "firebase-admin": "^11.10.1"

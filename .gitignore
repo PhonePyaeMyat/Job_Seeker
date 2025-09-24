@@ -16,6 +16,8 @@ dist
 .firebase/
 firebase-debug.log
 firebase-debug.*.log
+firebase-credentials.json
+**/firebase-credentials.json
 
 # IDE
 .vscode/
