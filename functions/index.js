@@ -13,13 +13,23 @@ const jobsCollection = db.collection('jobs');
 const app = express();
 
 // Configure CORS for production and development
-const allowedOrigins = process.env.NODE_ENV === 'production' 
-  ? [process.env.FRONTEND_URL, 'https://job-seeker-80fd8.web.app'] // Replace with your actual frontend URL
-  : ['http://localhost:3000'];
+const allowedOrigins = [
+  'http://localhost:3000',
+  'https://job-seeker-80fd8.web.app'
+];
 
-app.use(cors({ 
-  origin: allowedOrigins,
-  credentials: true 
+app.use(cors({
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps, curl, or Postman)
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
 }));
 app.use(express.json());
 
