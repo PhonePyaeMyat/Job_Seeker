@@ -1,10 +1,5 @@
-import axios from 'axios';
-
-// Use Firebase Functions in production, local emulator in development
-const API_URL = process.env.NODE_ENV === 'production' 
-  ? 'https://us-central1-job-seeker-80fd8.cloudfunctions.net/api/jobs' 
-  : (process.env.REACT_APP_API_URL || 'http://localhost:5001/job-seeker-80fd8/us-central1/api/jobs');
-const API_KEY = process.env.REACT_APP_API_KEY;
+import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
+import { db } from '../firebaseConfig';
 
 export interface Job {
   id: string;
@@ -29,50 +24,38 @@ export interface PaginatedJobs {
 }
 
 export const getJobs = async (page = 0, size = 10): Promise<PaginatedJobs> => {
-    const response = await axios.get(API_URL, { params: { page, size } });
-    return response.data;
+    const snapshot = await getDocs(collection(db, 'jobs'));
+    const allJobs: Job[] = snapshot.docs.map(d => ({ id: d.id, ...(d.data() as Omit<Job, 'id'>) }));
+    const start = page * size;
+    return {
+        jobs: allJobs.slice(start, start + size),
+        total: allJobs.length,
+    };
 };
 
 export const getJobById = async (id: string): Promise<Job> => {
-    const response = await axios.get(`${API_URL}/${id}`);
-    return response.data;
+    const ref = doc(db, 'jobs', id);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) throw new Error('Job not found');
+    return { id: snap.id, ...(snap.data() as Omit<Job, 'id'>) };
 };
 
 export const searchJobs = async (keyword: string, location: string, type: string, page = 0, size = 10): Promise<PaginatedJobs> => {
-    console.log('searchJobs called with:', { keyword, location, type, page, size });
-    const response = await axios.get(`${API_URL}/search`, {
-        params: { keyword, location, type, page, size }
-    });
-    console.log('searchJobs response:', response.data);
-    return response.data;
+    const snapshot = await getDocs(collection(db, 'jobs'));
+    let jobs: Job[] = snapshot.docs.map(d => ({ id: d.id, ...(d.data() as Omit<Job, 'id'>) }));
+    const k = keyword?.toLowerCase?.() || '';
+    if (location) jobs = jobs.filter(j => j.location && j.location.toLowerCase().includes(location.toLowerCase()));
+    if (type) jobs = jobs.filter(j => j.type === type);
+    if (k) jobs = jobs.filter(j =>
+        (j.title && j.title.toLowerCase().includes(k)) ||
+        (j.description && j.description.toLowerCase().includes(k)) ||
+        (j.company && j.company.toLowerCase().includes(k))
+    );
+    const start = page * size;
+    return {
+        jobs: jobs.slice(start, start + size),
+        total: jobs.length,
+    };
 };
 
-export const postJob = async (job: Partial<Job>) => {
-    if (!API_KEY) {
-        throw new Error('API key not configured. Please set REACT_APP_API_KEY environment variable.');
-    }
-    const response = await axios.post(API_URL, job, {
-        headers: { Authorization: API_KEY }
-    });
-    return response.data;
-};
-
-export const updateJob = async (id: string, job: Partial<Job>) => {
-    if (!API_KEY) {
-        throw new Error('API key not configured. Please set REACT_APP_API_KEY environment variable.');
-    }
-    const response = await axios.put(`${API_URL}/${id}`, job, {
-        headers: { Authorization: API_KEY }
-    });
-    return response.data;
-};
-
-export const deleteJob = async (id: string) => {
-    if (!API_KEY) {
-        throw new Error('API key not configured. Please set REACT_APP_API_KEY environment variable.');
-    }
-    const response = await axios.delete(`${API_URL}/${id}`, {
-        headers: { Authorization: API_KEY }
-    });
-    return response.data;
-}; 
+// Mutations (post/update/delete) intentionally omitted to avoid needing Cloud Functions/billing.
