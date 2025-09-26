@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { auth } from '../firebaseConfig';
+import { getJobById, applyToJob } from '../services/jobService';
 
 interface Job {
   id: string;
@@ -33,17 +34,20 @@ const JobDetails: React.FC = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    setLoading(true);
-    setError(null);
-    axios.get('http://localhost:3001/jobs/' + id)
-      .then(res => {
-        setJob(res.data);
-        setLoading(false);
-      })
-      .catch(err => {
+    const load = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        if (!id) throw new Error('Missing job id');
+        const data = await getJobById(id);
+        setJob(data as any);
+      } catch (e) {
         setError('Job not found or failed to load.');
+      } finally {
         setLoading(false);
-      });
+      }
+    };
+    load();
   }, [id]);
 
   const handleApply = async () => {
@@ -53,7 +57,8 @@ const JobDetails: React.FC = () => {
     }
     try {
       const userId = user.uid;
-      await axios.post(`http://localhost:3001/jobs/${id}/apply`, { userId });
+      if (!id) throw new Error('Missing job id');
+      await applyToJob(id, userId);
       setApplied(true);
       setApplyMsg('You have successfully applied for this job!');
     } catch (err) {

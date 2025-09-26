@@ -1,4 +1,4 @@
-import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc, updateDoc, arrayUnion } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 
 export interface Job {
@@ -38,6 +38,18 @@ export const getJobById = async (id: string): Promise<Job> => {
     const snap = await getDoc(ref);
     if (!snap.exists()) throw new Error('Job not found');
     return { id: snap.id, ...(snap.data() as Omit<Job, 'id'>) };
+};
+
+export const applyToJob = async (jobId: string, userId: string): Promise<void> => {
+    const ref = doc(db, 'jobs', jobId);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) throw new Error('Job not found');
+    const data = snap.data() as Omit<Job, 'id'>;
+    const alreadyApplicant = Array.isArray(data.applicants) && data.applicants.includes(userId);
+    if (alreadyApplicant) return; // idempotent
+    await updateDoc(ref, {
+        applicants: arrayUnion(userId),
+    });
 };
 
 export const searchJobs = async (keyword: string, location: string, type: string, page = 0, size = 10): Promise<PaginatedJobs> => {

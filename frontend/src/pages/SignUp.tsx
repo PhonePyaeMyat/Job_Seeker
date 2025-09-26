@@ -68,7 +68,29 @@ const SignUp: React.FC = () => {
       setSuccess(true);
       setTimeout(() => navigate('/dashboard'), 1500);
     } catch (err: any) {
-      setError(err.message);
+      const code = err?.code as string | undefined;
+      let friendly = err?.message || 'Sign up failed.';
+      switch (code) {
+        case 'auth/email-already-in-use':
+          friendly = 'This email is already in use. Try logging in instead.';
+          break;
+        case 'auth/invalid-email':
+          friendly = 'Invalid email address.';
+          break;
+        case 'auth/weak-password':
+          friendly = 'Password is too weak. Use at least 6 characters with a mix of types.';
+          break;
+        case 'auth/operation-not-allowed':
+          friendly = 'Email/Password sign-in is disabled for this project.';
+          break;
+        case 'auth/admin-restricted-operation':
+          friendly = 'This operation is restricted by the administrator.';
+          break;
+        case 'auth/api-key-expired':
+          friendly = 'The Firebase API key is expired. Please contact support or try again later.';
+          break;
+      }
+      setError(friendly);
     } finally {
       setLoading(false);
     }
@@ -84,7 +106,12 @@ const SignUp: React.FC = () => {
       setSuccess(true);
       setTimeout(() => navigate('/dashboard'), 1500);
     } catch (err: any) {
-      setError(err.message);
+      const code = err?.code as string | undefined;
+      let friendly = err?.message || 'Google sign-in failed.';
+      if (code === 'auth/popup-closed-by-user') friendly = 'Sign-in popup was closed before completing.';
+      if (code === 'auth/cancelled-popup-request') friendly = 'Another sign-in is in progress.';
+      if (code === 'auth/popup-blocked') friendly = 'Popup was blocked by the browser. Allow popups and try again.';
+      setError(friendly);
     } finally {
       setLoading(false);
     }

@@ -1,28 +1,40 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { collection, getDocs, limit, query } from 'firebase/firestore';
+import { db } from '../firebaseConfig';
 
 const BackendStatus: React.FC = () => {
   const [status, setStatus] = useState<'checking' | 'connected' | 'error'>('checking');
   const [error, setError] = useState<string>('');
 
   useEffect(() => {
-    const checkBackend = async () => {
+    const check = async () => {
       try {
+        const isProd = window.location.hostname !== 'localhost';
+        if (isProd) {
+          // In production, verify Firestore connectivity instead of localhost backend
+          const q = query(collection(db, 'jobs'), limit(1));
+          await getDocs(q);
+          setStatus('connected');
+          return;
+        }
+
+        // In development, attempt to reach local backend if present
         const response = await axios.get('http://localhost:3001/jobs');
         console.log('Backend response:', response.data);
         setStatus('connected');
       } catch (err: any) {
         console.error('Backend connection failed:', err);
         setStatus('error');
-        if (err.code === 'ECONNREFUSED') {
-          setError('Backend server is not running. Please start it with: cd backend-nodejs && npm start');
+        if (err?.code === 'ECONNREFUSED') {
+          setError('Backend server is not running. For dev, start it or ignore this message.');
         } else {
-          setError(`Connection failed: ${err.message}`);
+          setError(`Connection failed: ${err?.message || 'Unknown error'}`);
         }
       }
     };
 
-    checkBackend();
+    check();
   }, []);
 
   if (status === 'checking') {
