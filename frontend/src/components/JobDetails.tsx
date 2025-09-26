@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import axios from 'axios';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { auth } from '../firebaseConfig';
 import { getJobById, applyToJob } from '../services/jobService';
@@ -28,10 +27,13 @@ const JobDetails: React.FC = () => {
   const [job, setJob] = useState<Job | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [applied, setApplied] = useState(false);
+  const [applying, setApplying] = useState(false);
   const [applyMsg, setApplyMsg] = useState('');
   const [user, userLoading] = useAuthState(auth);
   const navigate = useNavigate();
+
+  // Check if user has already applied (force to boolean)
+  const hasApplied = !!(user && job?.applicants?.includes(user.uid));
 
   useEffect(() => {
     const load = async () => {
@@ -40,8 +42,9 @@ const JobDetails: React.FC = () => {
         setError(null);
         if (!id) throw new Error('Missing job id');
         const data = await getJobById(id);
-        setJob(data as any);
-      } catch (e) {
+        setJob(data as Job);
+      } catch (e: any) {
+        console.error('Error loading job:', e);
         setError('Job not found or failed to load.');
       } finally {
         setLoading(false);
@@ -55,62 +58,186 @@ const JobDetails: React.FC = () => {
       navigate('/login');
       return;
     }
+
+    if (hasApplied) {
+      setApplyMsg('You have already applied to this job.');
+      return;
+    }
+
     try {
+      setApplying(true);
       const userId = user.uid;
       if (!id) throw new Error('Missing job id');
+      
       await applyToJob(id, userId);
-      setApplied(true);
-      setApplyMsg('You have successfully applied for this job!');
-    } catch (err) {
+      
+      // Update local job state to reflect the application
+      if (job) {
+        setJob({
+          ...job,
+          applicants: [...(job.applicants || []), userId]
+        });
+      }
+      
+      setApplyMsg('You have successfully applied for this job! 🎉');
+    } catch (err: any) {
+      console.error('Application error:', err);
       setApplyMsg('Failed to apply. Please try again.');
+    } finally {
+      setApplying(false);
     }
   };
 
-  if (loading) return <div className="p-8 text-center">Loading...</div>;
-  if (error) return <div className="p-8 text-center text-red-500">{error}</div>;
+  if (loading) {
+    return (
+      <div className="container mx-auto p-6 max-w-2xl">
+        <div className="flex justify-center items-center py-12">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+          <span className="ml-2">Loading job details...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="container mx-auto p-6 max-w-2xl">
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+          {error}
+        </div>
+        <Link to="/" className="text-blue-600 hover:underline mt-4 inline-block">
+          ← Back to Jobs
+        </Link>
+      </div>
+    );
+  }
+
   if (!job) return null;
 
   return (
     <div className="container mx-auto p-6 max-w-2xl bg-white rounded shadow">
-      <Link to="/" className="text-blue-600 hover:underline">&larr; Back to Jobs</Link>
-      <h2 className="text-3xl font-bold mt-4 mb-2">{job.title}</h2>
-      <div className="text-gray-600 mb-2">{job.company} &bull; {job.location}</div>
-      <div className="mb-4">
-        <span className="inline-block bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs mr-2">{job.type}</span>
-        <span className="inline-block bg-green-100 text-green-800 px-2 py-1 rounded text-xs mr-2">{job.experienceLevel}</span>
-        {job.salary && <span className="inline-block bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-xs">{job.salary}</span>}
-      </div>
-      <div className="mb-4">
-        <h3 className="font-semibold mb-1">Description</h3>
-        <p className="text-gray-800 whitespace-pre-line">{job.description}</p>
-      </div>
-      <div className="mb-4">
-        <h3 className="font-semibold mb-1">Requirements</h3>
-        <p className="text-gray-800 whitespace-pre-line">{job.requirements}</p>
-      </div>
-      <div className="mb-4">
-        <h3 className="font-semibold mb-1">Skills</h3>
-        <div className="flex flex-wrap gap-2">
-          {job.skills && job.skills.map((skill, idx) => (
-            <span key={idx} className="bg-gray-200 text-gray-700 px-2 py-1 rounded text-xs">{skill}</span>
-          ))}
+      <Link to="/" className="text-blue-600 hover:underline mb-4 inline-block">
+        ← Back to Jobs
+      </Link>
+      
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold mb-2">{job.title}</h1>
+        <div className="text-gray-600 mb-4 flex items-center gap-2">
+          <span className="font-medium">{job.company}</span>
+          <span>•</span>
+          <span>{job.location}</span>
+        </div>
+        
+        <div className="flex flex-wrap gap-2 mb-4">
+          <span className="inline-block bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-medium">
+            {job.type}
+          </span>
+          <span className="inline-block bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm font-medium">
+            {job.experienceLevel}
+          </span>
+          {job.salary && (
+            <span className="inline-block bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-sm font-medium">
+              {job.salary}
+            </span>
+          )}
         </div>
       </div>
-      <div className="text-sm text-gray-500">
-        Posted: {new Date(job.postedDate).toLocaleDateString()} | Expires: {new Date(job.expiryDate).toLocaleDateString()}
-      </div>
-      <div className="mt-6">
-        <button
-          className="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 disabled:opacity-50"
-          onClick={handleApply}
-          disabled={applied || userLoading}
-        >
-          {applied ? 'Applied' : 'Apply Now'}
-        </button>
-        {applyMsg && <div className="text-green-600 mt-2">{applyMsg}</div>}
+
+      <div className="space-y-6">
+        <div>
+          <h3 className="text-lg font-semibold mb-3">Job Description</h3>
+          <div className="text-gray-800 whitespace-pre-line leading-relaxed">
+            {job.description}
+          </div>
+        </div>
+
+        {job.requirements && (
+          <div>
+            <h3 className="text-lg font-semibold mb-3">Requirements</h3>
+            <div className="text-gray-800 whitespace-pre-line leading-relaxed">
+              {job.requirements}
+            </div>
+          </div>
+        )}
+
+        {job.skills && job.skills.length > 0 && (
+          <div>
+            <h3 className="text-lg font-semibold mb-3">Required Skills</h3>
+            <div className="flex flex-wrap gap-2">
+              {job.skills.map((skill, idx) => (
+                <span 
+                  key={idx} 
+                  className="bg-gray-100 text-gray-700 px-3 py-1 rounded-full text-sm border"
+                >
+                  {skill}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="border-t pt-6">
+          <div className="flex justify-between items-center text-sm text-gray-500 mb-4">
+            <span>Posted: {new Date(job.postedDate).toLocaleDateString()}</span>
+            <span>Expires: {new Date(job.expiryDate).toLocaleDateString()}</span>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <button
+              className={`px-6 py-3 rounded-lg font-medium transition-colors ${
+                hasApplied 
+                  ? 'bg-green-100 text-green-800 cursor-not-allowed'
+                  : 'bg-blue-600 text-white hover:bg-blue-700'
+              } ${applying ? 'opacity-50 cursor-not-allowed' : ''}`}
+              onClick={handleApply}
+              disabled={applying || userLoading || hasApplied}
+            >
+              {applying ? (
+                <span className="flex items-center gap-2">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  Applying...
+                </span>
+              ) : hasApplied ? (
+                '✓ Applied'
+              ) : (
+                'Apply Now'
+              )}
+            </button>
+
+            {!user && (
+              <p className="text-sm text-gray-600">
+                <Link to="/login" className="text-blue-600 hover:underline">
+                  Sign in
+                </Link>{' '}
+                to apply for this job
+              </p>
+            )}
+          </div>
+
+          {applyMsg && (
+            <div className={`mt-4 p-3 rounded ${
+              applyMsg.includes('successfully') 
+                ? 'bg-green-100 text-green-800 border border-green-200'
+                : 'bg-red-100 text-red-800 border border-red-200'
+            }`}>
+              {applyMsg}
+            </div>
+          )}
+
+          {hasApplied && (
+            <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded">
+              <p className="text-blue-800 text-sm">
+                ✓ You have already applied to this position. 
+                <Link to="/dashboard" className="text-blue-600 hover:underline ml-1">
+                  View your applications
+                </Link>
+              </p>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
 };
 
-export default JobDetails; 
+export default JobDetails;
