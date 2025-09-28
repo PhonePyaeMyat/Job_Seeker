@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { auth, db } from '../firebaseConfig';
-import { doc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { doc, updateDoc, arrayUnion, arrayRemove, getDoc, setDoc } from 'firebase/firestore';
 
 interface SaveJobButtonProps {
   jobId: string;
@@ -28,6 +28,16 @@ const SaveJobButton: React.FC<SaveJobButtonProps> = ({
     try {
       setLoading(true);
       const userRef = doc(db, 'users', user.uid);
+
+      // Ensure user document exists to prevent update failures
+      const snap = await getDoc(userRef);
+      if (!snap.exists()) {
+        await setDoc(userRef, {
+          savedJobs: [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+      }
       
       if (isSaved) {
         // Remove from saved jobs
