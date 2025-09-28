@@ -5,7 +5,7 @@ import JobForm from './components/JobForm';
 import SignUp from './pages/SignUp';
 import Login from './pages/Login';
 import JobSeekerDashboard from './pages/JobSeekerDashboard';
-import EmployerDashboard from './pages/EmployerDashboard';
+import LandingPage from './components/LandingPage';
 import EmployerHome from './components/EmployerHome';
 import JobSeekerHome from './components/JobSeekerHome';
 import Profile from './pages/Profile';
@@ -32,7 +32,7 @@ function App() {
       <main>
         
           <Routes>
-            <Route path="/" element={user ? (role === 'admin' ? <AdminPanel /> : role === 'employer' ? <EmployerHome /> : role === 'jobseeker' ? <JobSeekerHome /> : <JobList />) : <JobList />} />
+            <Route path="/" element={user ? (role === 'admin' ? <AdminPanel /> : role === 'employer' ? <EmployerHome /> : role === 'jobseeker' ? <JobSeekerHome /> : <JobList />) : <LandingPage />} />
             <Route path="/jobs" element={<JobList />} />
             <Route path="/jobs/:id" element={<JobDetails />} />
             <Route path="/post-job" element={<JobForm />} />

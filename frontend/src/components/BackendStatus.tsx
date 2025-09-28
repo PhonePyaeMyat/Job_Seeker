@@ -3,7 +3,12 @@ import axios from 'axios';
 import { collection, getDocs, limit, query } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 
-const BackendStatus: React.FC = () => {
+interface BackendStatusProps {
+  onError?: (error: string) => void;
+  onSuccess?: () => void;
+}
+
+const BackendStatus: React.FC<BackendStatusProps> = ({ onError, onSuccess }) => {
   const [status, setStatus] = useState<'checking' | 'connected' | 'error'>('checking');
   const [error, setError] = useState<string>('');
 
@@ -16,6 +21,7 @@ const BackendStatus: React.FC = () => {
           const q = query(collection(db, 'jobs'), limit(1));
           await getDocs(q);
           setStatus('connected');
+          onSuccess?.();
           return;
         }
 
@@ -23,28 +29,27 @@ const BackendStatus: React.FC = () => {
         const response = await axios.get('http://localhost:3001/jobs');
         console.log('Backend response:', response.data);
         setStatus('connected');
+        onSuccess?.();
       } catch (err: any) {
         console.error('Backend connection failed:', err);
         setStatus('error');
+        let errorMessage = '';
+        
         if (err?.code === 'ECONNREFUSED') {
-          setError('Backend server is not running. For dev, start it or ignore this message.');
+          errorMessage = 'Backend server is not running. For dev, start it or ignore this message.';
         } else {
-          setError(`Connection failed: ${err?.message || 'Unknown error'}`);
+          errorMessage = `Connection failed: ${err?.message || 'Unknown error'}`;
         }
+        
+        setError(errorMessage);
+        onError?.(errorMessage);
       }
     };
 
     check();
-  }, []);
+  }, [onError, onSuccess]);
 
-  if (status === 'checking') {
-    return (
-      <div className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded mb-4">
-        <strong>Checking backend connection...</strong>
-      </div>
-    );
-  }
-
+  // Only render error status, not success or checking
   if (status === 'error') {
     return (
       <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
@@ -60,11 +65,8 @@ const BackendStatus: React.FC = () => {
     );
   }
 
-  return (
-    <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
-      <strong>✅ Backend connected successfully!</strong>
-    </div>
-  );
+  // Don't render anything for checking or connected states
+  return null;
 };
 
 export default BackendStatus;

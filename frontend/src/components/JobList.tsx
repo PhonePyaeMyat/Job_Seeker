@@ -9,6 +9,7 @@ const JobList = () => {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [backendError, setBackendError] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
   const [filters, setFilters] = useState<{ keyword: string; location: string; type: string } | null>(null);
@@ -17,6 +18,7 @@ const JobList = () => {
   const fetchJobs = async (pageNum = 0, filtersArg = filters) => {
     try {
       setLoading(true);
+      setError(null); // Clear previous errors
       console.log('Fetching jobs...', { pageNum, filtersArg });
       
       let data;
@@ -31,17 +33,24 @@ const JobList = () => {
       // Handle paginated response
       setJobs(data.jobs || []);
       setTotal(data.total || 0);
-      setError(null);
     } catch (err: any) {
       console.error('Error fetching jobs:', err);
       if (err.code === 'ECONNREFUSED' || err.message.includes('Network Error')) {
-        setError('Cannot connect to server. Please make sure the backend is running on http://localhost:3001');
+        setError('Cannot connect to server. Please make sure the backend is running.');
       } else {
         setError(`Failed to load jobs: ${err.message}`);
       }
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleBackendError = (errorMessage: string) => {
+    setBackendError(errorMessage);
+  };
+
+  const handleBackendSuccess = () => {
+    setBackendError(null);
   };
 
   useEffect(() => {
@@ -71,12 +80,16 @@ const JobList = () => {
     );
   }
 
-  if (error) {
+  if (error || backendError) {
     return (
       <div className="text-center text-red-600 p-4">
-        <p>{error}</p>
+        <p>{error || backendError}</p>
         <button
-          onClick={() => fetchJobs()}
+          onClick={() => {
+            setError(null);
+            setBackendError(null);
+            fetchJobs();
+          }}
           className="mt-4 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
         >
           Try Again
@@ -89,7 +102,10 @@ const JobList = () => {
     <div className="container mx-auto px-4 py-8">
       <h1 className="text-3xl font-bold text-gray-800 mb-8">Find Your Dream Job</h1>
       
-      <BackendStatus />
+      <BackendStatus 
+        onError={handleBackendError}
+        onSuccess={handleBackendSuccess}
+      />
       
       <JobSearch onSearch={handleSearch} />
       

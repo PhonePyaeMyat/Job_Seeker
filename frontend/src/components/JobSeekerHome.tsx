@@ -44,19 +44,17 @@ const JobSeekerHome: React.FC = () => {
   const [stats, setStats] = useState<JobSeekerStats | null>(null);
   const [searchFilters, setSearchFilters] = useState<{ keyword: string; location: string; type: string } | null>(null);
   const [activeTab, setActiveTab] = useState<'all' | 'featured' | 'recent'>('all');
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!user) {
-      setLoading(false);
-      return;
-    }
-
+    // Load jobs regardless of user login status for job seekers
     loadJobSeekerData();
-  }, [user]);
+  }, []); // Remove user dependency
 
   const loadJobSeekerData = async () => {
     try {
       setLoading(true);
+      setError(null);
       await Promise.all([
         loadAllJobs(),
         loadFeaturedJobs(),
@@ -65,6 +63,7 @@ const JobSeekerHome: React.FC = () => {
       ]);
     } catch (err: any) {
       console.error('Error loading job seeker data:', err);
+      setError(`Failed to load jobs: ${err.message}`);
     } finally {
       setLoading(false);
     }
@@ -72,104 +71,206 @@ const JobSeekerHome: React.FC = () => {
 
   const loadAllJobs = async () => {
     try {
-      const q = query(
-        collection(db, 'jobs'),
-        where('active', '==', true),
-        where('status', '==', 'approved'),
-        orderBy('postedDate', 'desc'),
-        limit(20)
-      );
+      // First try to load all jobs without complex filters
+      const jobsRef = collection(db, 'jobs');
+      let q;
+
+      try {
+        // Try with full query first
+        q = query(
+          jobsRef,
+          where('active', '==', true),
+          orderBy('postedDate', 'desc'),
+          limit(20)
+        );
+      } catch (queryError) {
+        console.warn('Complex query failed, trying simple query:', queryError);
+        // Fallback to simpler query
+        q = query(jobsRef, limit(20));
+      }
+
       const snapshot = await getDocs(q);
-      const jobsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        status: doc.data().status || 'approved',
-        active: doc.data().active || false,
-        applicants: doc.data().applicants || []
-      } as Job));
+      const jobsData = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          title: data.title || 'Untitled Job',
+          company: data.company || 'Unknown Company',
+          location: data.location || 'Location TBD',
+          type: data.type || 'FULL_TIME',
+          salary: data.salary || 'Salary TBD',
+          postedDate: data.postedDate || new Date().toISOString(),
+          description: data.description || 'No description available',
+          active: data.active !== false, // Default to true
+          applicants: data.applicants || [],
+          status: data.status || 'approved',
+          featured: data.featured || false
+        } as Job;
+      });
+
+      console.log('Loaded jobs:', jobsData.length);
       setJobs(jobsData);
     } catch (err) {
-      console.error('Error loading jobs:', err);
+      console.error('Error loading all jobs:', err);
+      // Try to load without any filters as absolute fallback
+      try {
+        const snapshot = await getDocs(collection(db, 'jobs'));
+        const jobsData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+          active: doc.data().active !== false,
+          applicants: doc.data().applicants || [],
+          status: doc.data().status || 'approved'
+        } as Job));
+        console.log('Fallback: Loaded jobs without filters:', jobsData.length);
+        setJobs(jobsData);
+      } catch (fallbackErr) {
+        console.error('Even fallback query failed:', fallbackErr);
+        throw fallbackErr;
+      }
     }
   };
 
   const loadFeaturedJobs = async () => {
     try {
-      const q = query(
-        collection(db, 'jobs'),
-        where('active', '==', true),
-        where('status', '==', 'approved'),
-        where('featured', '==', true),
-        orderBy('postedDate', 'desc'),
-        limit(6)
-      );
+      let q;
+      try {
+        q = query(
+          collection(db, 'jobs'),
+          where('featured', '==', true),
+          limit(6)
+        );
+      } catch (queryError) {
+        // If featured query fails, just return empty array
+        console.warn('Featured jobs query failed:', queryError);
+        setFeaturedJobs([]);
+        return;
+      }
+
       const snapshot = await getDocs(q);
       const featuredData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
-        status: doc.data().status || 'approved',
-        active: doc.data().active || false,
-        applicants: doc.data().applicants || []
+        active: doc.data().active !== false,
+        applicants: doc.data().applicants || [],
+        status: doc.data().status || 'approved'
       } as Job));
+      
+      console.log('Loaded featured jobs:', featuredData.length);
       setFeaturedJobs(featuredData);
     } catch (err) {
       console.error('Error loading featured jobs:', err);
+      setFeaturedJobs([]);
     }
   };
 
   const loadRecentJobs = async () => {
     try {
-      const q = query(
-        collection(db, 'jobs'),
-        where('active', '==', true),
-        where('status', '==', 'approved'),
-        orderBy('postedDate', 'desc'),
-        limit(8)
-      );
+      let q;
+      try {
+        q = query(
+          collection(db, 'jobs'),
+          orderBy('postedDate', 'desc'),
+          limit(8)
+        );
+      } catch (queryError) {
+        console.warn('Recent jobs query failed:', queryError);
+        // Use jobs from loadAllJobs as fallback
+        setRecentJobs(jobs.slice(0, 8));
+        return;
+      }
+
       const snapshot = await getDocs(q);
       const recentData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
-        status: doc.data().status || 'approved',
-        active: doc.data().active || false,
-        applicants: doc.data().applicants || []
+        active: doc.data().active !== false,
+        applicants: doc.data().applicants || [],
+        status: doc.data().status || 'approved'
       } as Job));
+      
+      console.log('Loaded recent jobs:', recentData.length);
       setRecentJobs(recentData);
     } catch (err) {
       console.error('Error loading recent jobs:', err);
+      // Use first 8 jobs as fallback
+      setRecentJobs(jobs.slice(0, 8));
     }
   };
 
   const loadStats = async () => {
     try {
-      // Mock stats for now - you can implement real stats based on user applications
+      // Calculate stats based on loaded jobs
+      const userApplications = user ? jobs.filter(job => 
+        job.applicants && job.applicants.includes(user.uid)
+      ).length : 0;
+
       setStats({
         totalJobs: jobs.length,
-        appliedJobs: 0, // Would be calculated from user's applications
+        appliedJobs: userApplications,
         savedJobs: 0,   // Would be calculated from user's saved jobs
         profileViews: 0 // Would be calculated from profile views
       });
     } catch (err) {
       console.error('Error loading stats:', err);
+      // Provide default stats
+      setStats({
+        totalJobs: jobs.length,
+        appliedJobs: 0,
+        savedJobs: 0,
+        profileViews: 0
+      });
     }
   };
 
+  // Recalculate stats when jobs change
+  useEffect(() => {
+    if (jobs.length > 0) {
+      loadStats();
+    }
+  }, [jobs, user]);
+
   const handleSearch = (filters: { keyword: string; location: string; type: string }) => {
     setSearchFilters(filters);
-    // You can implement search filtering here
+    // Filter jobs based on search criteria
+    let filteredJobs = [...jobs];
+    
+    if (filters.keyword) {
+      const keyword = filters.keyword.toLowerCase();
+      filteredJobs = filteredJobs.filter(job =>
+        job.title.toLowerCase().includes(keyword) ||
+        job.company.toLowerCase().includes(keyword) ||
+        job.description.toLowerCase().includes(keyword)
+      );
+    }
+    
+    if (filters.location) {
+      const location = filters.location.toLowerCase();
+      filteredJobs = filteredJobs.filter(job =>
+        job.location.toLowerCase().includes(location)
+      );
+    }
+    
+    if (filters.type) {
+      filteredJobs = filteredJobs.filter(job => job.type === filters.type);
+    }
+    
+    // Update the jobs display with filtered results
+    setJobs(filteredJobs);
+    setActiveTab('all');
   };
 
   const handleApply = async (jobId: string) => {
-    // TODO: Implement job application logic
     console.log('Applying for job:', jobId);
+    // TODO: Implement job application logic or redirect to job details
   };
 
   const getDisplayJobs = () => {
     switch (activeTab) {
       case 'featured':
-        return featuredJobs;
+        return featuredJobs.length > 0 ? featuredJobs : jobs.filter(job => job.featured);
       case 'recent':
-        return recentJobs;
+        return recentJobs.length > 0 ? recentJobs : jobs.slice(0, 8);
       default:
         return jobs;
     }
@@ -179,6 +280,22 @@ const JobSeekerHome: React.FC = () => {
     return (
       <div className="flex justify-center items-center min-h-screen">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+          {error}
+        </div>
+        <button 
+          onClick={loadJobSeekerData}
+          className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+        >
+          Try Again
+        </button>
       </div>
     );
   }
@@ -355,7 +472,13 @@ const JobSeekerHome: React.FC = () => {
                   </svg>
                 </div>
                 <h3 className="text-lg font-medium text-gray-900 mb-2">No jobs found</h3>
-                <p className="text-gray-500">Try adjusting your search criteria or check back later for new opportunities.</p>
+                <p className="text-gray-500 mb-4">Try adjusting your search criteria or check back later for new opportunities.</p>
+                <button 
+                  onClick={loadJobSeekerData}
+                  className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+                >
+                  Reload Jobs
+                </button>
               </div>
             ) : (
               getDisplayJobs().map(job => (
