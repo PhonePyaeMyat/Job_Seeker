@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, sendPasswordResetEmail } from 'firebase/auth';
-import { auth } from '../firebaseConfig';
+import { auth, db } from '../firebaseConfig';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuthState } from 'react-firebase-hooks/auth';
 
@@ -105,7 +106,35 @@ const Login: React.FC = () => {
 
     try {
       const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+      
+      // Check if user document exists in Firestore
+      const userDocRef = doc(db, 'users', user.uid);
+      const userDoc = await getDoc(userDocRef);
+      
+      if (!userDoc.exists()) {
+        // Create user document if it doesn't exist
+        const userData = {
+          displayName: user.displayName || user.email?.split('@')[0] || 'User',
+          email: user.email || '',
+          role: 'jobseeker', // Default to jobseeker, user can change this later in profile
+          createdAt: new Date().toISOString(),
+          phone: '',
+          linkedin: '',
+          country: '',
+          city: '',
+          resume: null
+        };
+        
+        await setDoc(userDocRef, userData);
+        localStorage.setItem('role', 'jobseeker');
+      } else {
+        // User exists, set role from Firestore document
+        const existingData = userDoc.data();
+        localStorage.setItem('role', existingData?.role || 'jobseeker');
+      }
+      
       // Navigation will be handled by useEffect
     } catch (error: any) {
       let errorMessage = 'Google sign-in failed. Please try again.';

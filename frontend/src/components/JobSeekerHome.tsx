@@ -4,6 +4,8 @@ import { auth, db } from '../firebaseConfig';
 import { 
   collection, 
   getDocs, 
+  getDoc,
+  doc,
   query, 
   orderBy, 
   where,
@@ -41,9 +43,11 @@ const JobSeekerHome: React.FC = () => {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [featuredJobs, setFeaturedJobs] = useState<Job[]>([]);
   const [recentJobs, setRecentJobs] = useState<Job[]>([]);
+  const [savedJobs, setSavedJobs] = useState<Job[]>([]);
+  const [savedJobIds, setSavedJobIds] = useState<string[]>([]);
   const [stats, setStats] = useState<JobSeekerStats | null>(null);
   const [searchFilters, setSearchFilters] = useState<{ keyword: string; location: string; type: string } | null>(null);
-  const [activeTab, setActiveTab] = useState<'all' | 'featured' | 'recent'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'featured' | 'recent' | 'saved'>('all');
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -59,6 +63,7 @@ const JobSeekerHome: React.FC = () => {
         loadAllJobs(),
         loadFeaturedJobs(),
         loadRecentJobs(),
+        loadSavedJobs(),
         loadStats()
       ]);
     } catch (err: any) {
@@ -198,6 +203,39 @@ const JobSeekerHome: React.FC = () => {
     }
   };
 
+  const loadSavedJobs = async () => {
+    if (!user) {
+      setSavedJobs([]);
+      setSavedJobIds([]);
+      return;
+    }
+
+    try {
+      // Get user's saved job IDs from their profile
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      if (userDoc.exists()) {
+        const userData = userDoc.data();
+        const savedIds = userData.savedJobs || [];
+        setSavedJobIds(savedIds);
+
+        if (savedIds.length > 0) {
+          // Get the actual job data for saved jobs
+          const savedJobsData = jobs.filter(job => savedIds.includes(job.id));
+          setSavedJobs(savedJobsData);
+        } else {
+          setSavedJobs([]);
+        }
+      } else {
+        setSavedJobs([]);
+        setSavedJobIds([]);
+      }
+    } catch (err) {
+      console.error('Error loading saved jobs:', err);
+      setSavedJobs([]);
+      setSavedJobIds([]);
+    }
+  };
+
   const loadStats = async () => {
     try {
       // Calculate stats based on loaded jobs
@@ -208,7 +246,7 @@ const JobSeekerHome: React.FC = () => {
       setStats({
         totalJobs: jobs.length,
         appliedJobs: userApplications,
-        savedJobs: 0,   // Would be calculated from user's saved jobs
+        savedJobs: savedJobs.length,
         profileViews: 0 // Would be calculated from profile views
       });
     } catch (err) {
@@ -229,6 +267,13 @@ const JobSeekerHome: React.FC = () => {
       loadStats();
     }
   }, [jobs, user]);
+
+  // Reload saved jobs when user changes or jobs are loaded
+  useEffect(() => {
+    if (user && jobs.length > 0) {
+      loadSavedJobs();
+    }
+  }, [user, jobs]);
 
   const handleSearch = (filters: { keyword: string; location: string; type: string }) => {
     setSearchFilters(filters);
@@ -271,8 +316,24 @@ const JobSeekerHome: React.FC = () => {
         return featuredJobs.length > 0 ? featuredJobs : jobs.filter(job => job.featured);
       case 'recent':
         return recentJobs.length > 0 ? recentJobs : jobs.slice(0, 8);
+      case 'saved':
+        return savedJobs;
       default:
         return jobs;
+    }
+  };
+
+  const handleSaveChange = (jobId: string, isSaved: boolean) => {
+    if (isSaved) {
+      setSavedJobIds(prev => [...prev, jobId]);
+      // Add job to saved jobs if it exists in the current jobs list
+      const job = jobs.find(j => j.id === jobId);
+      if (job) {
+        setSavedJobs(prev => [...prev, job]);
+      }
+    } else {
+      setSavedJobIds(prev => prev.filter(id => id !== jobId));
+      setSavedJobs(prev => prev.filter(job => job.id !== jobId));
     }
   };
 
@@ -444,7 +505,8 @@ const JobSeekerHome: React.FC = () => {
             {[
               { id: 'all', label: 'All Jobs', count: jobs.length },
               { id: 'featured', label: 'Featured', count: featuredJobs.length },
-              { id: 'recent', label: 'Recent', count: recentJobs.length }
+              { id: 'recent', label: 'Recent', count: recentJobs.length },
+              { id: 'saved', label: 'Saved Jobs', count: savedJobs.length }
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -482,12 +544,14 @@ const JobSeekerHome: React.FC = () => {
               </div>
             ) : (
               getDisplayJobs().map(job => (
-                <Link to={`/jobs/${job.id}`} key={job.id} className="block hover:shadow-lg transition-shadow">
+                <div key={job.id} className="block hover:shadow-lg transition-shadow">
                   <JobCard
                     job={job}
                     onApply={handleApply}
+                    isSaved={savedJobIds.includes(job.id)}
+                    onSaveChange={handleSaveChange}
                   />
-                </Link>
+                </div>
               ))
             )}
           </div>

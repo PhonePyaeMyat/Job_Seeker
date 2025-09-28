@@ -1,4 +1,5 @@
 import React from 'react';
+import SaveJobButton from './SaveJobButton';
 
 interface JobCardProps {
   job: {
@@ -12,9 +13,11 @@ interface JobCardProps {
     description: string;
   };
   onApply: (jobId: string) => void;
+  isSaved?: boolean;
+  onSaveChange?: (jobId: string, isSaved: boolean) => void;
 }
 
-const JobCard = ({ job, onApply }: JobCardProps) => {
+const JobCard = ({ job, onApply, isSaved = false, onSaveChange }: JobCardProps) => {
   return (
     <div className="bg-white rounded-lg shadow-md p-6 mb-4 hover:shadow-lg transition-shadow">
       <div className="flex justify-between items-start">
@@ -49,12 +52,19 @@ const JobCard = ({ job, onApply }: JobCardProps) => {
         <span className="text-sm text-gray-500">
           Posted {new Date(job.postedDate).toLocaleDateString()}
         </span>
-        <button
-          onClick={() => onApply(job.id)}
-          className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
-        >
-          Apply Now
-        </button>
+        <div className="flex gap-2">
+          <SaveJobButton
+            jobId={job.id}
+            isSaved={isSaved}
+            onSaveChange={onSaveChange}
+          />
+          <button
+            onClick={() => onApply(job.id)}
+            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
+          >
+            Apply Now
+          </button>
+        </div>
       </div>
     </div>
   );

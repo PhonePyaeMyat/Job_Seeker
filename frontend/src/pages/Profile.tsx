@@ -18,6 +18,7 @@ interface UserProfile {
   experience: string;
   education: string;
   resumeUrl: string;
+  savedJobs: string[]; // Array of job IDs
   // Employer fields
   companyName: string;
   companySize: string;
@@ -57,7 +58,32 @@ const Profile: React.FC = () => {
         const userDoc = await getDoc(doc(db, 'users', user.uid));
         
         if (userDoc.exists()) {
-          setProfile(userDoc.data() as UserProfile);
+          const userData = userDoc.data();
+          // Ensure skills is always an array
+          const profileData: UserProfile = {
+            ...userData,
+            skills: userData.skills || [],
+            savedJobs: userData.savedJobs || [],
+            // Ensure other array fields are also arrays
+            displayName: userData.displayName || '',
+            email: userData.email || '',
+            role: userData.role || 'jobseeker',
+            bio: userData.bio || '',
+            location: userData.location || '',
+            phone: userData.phone || '',
+            website: userData.website || '',
+            experience: userData.experience || '',
+            education: userData.education || '',
+            resumeUrl: userData.resumeUrl || '',
+            companyName: userData.companyName || '',
+            companySize: userData.companySize || '',
+            industry: userData.industry || '',
+            companyDescription: userData.companyDescription || '',
+            companyWebsite: userData.companyWebsite || '',
+            createdAt: userData.createdAt || new Date().toISOString(),
+            updatedAt: userData.updatedAt || new Date().toISOString()
+          } as UserProfile;
+          setProfile(profileData);
         } else {
           // Create default profile if it doesn't exist
           const defaultProfile: UserProfile = {
@@ -69,6 +95,7 @@ const Profile: React.FC = () => {
             phone: '',
             website: '',
             skills: [],
+            savedJobs: [],
             experience: '',
             education: '',
             resumeUrl: '',
@@ -410,13 +437,13 @@ const Profile: React.FC = () => {
                       </label>
                       <input
                         type="text"
-                        value={profile.skills.join(', ')}
+                        value={profile.skills?.join(', ') || ''}
                         onChange={(e) => handleSkillsChange(e.target.value)}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                         placeholder="React, Node.js, Python, etc."
                       />
                       <p className="mt-1 text-sm text-gray-500">
-                        Current skills: {profile.skills.length > 0 ? profile.skills.join(', ') : 'None'}
+                        Current skills: {profile.skills && profile.skills.length > 0 ? profile.skills.join(', ') : 'None'}
                       </p>
                     </div>
 

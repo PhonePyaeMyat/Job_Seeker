@@ -228,8 +228,44 @@ const EnhancedSignUp: React.FC = () => {
     setLoading(true);
     try {
       const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
-      localStorage.setItem('role', form.role);
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+      
+      // Set admin role for specific admin credentials
+      let userRole = form.role;
+      if (user.email === 'admin@jobseeker.com' || user.displayName === 'admin') {
+        userRole = 'admin';
+      }
+      
+      // Update Firebase Auth profile if display name is not set
+      if (!user.displayName && form.fullName) {
+        await updateProfile(user, { displayName: form.fullName });
+      }
+      
+      // Create user document in Firestore
+      const userData = {
+        displayName: user.displayName || form.fullName || user.email?.split('@')[0] || 'User',
+        email: user.email || '',
+        role: userRole,
+        createdAt: new Date().toISOString(),
+        phone: form.phone || '',
+        linkedin: form.linkedin || '',
+        ...(userRole === 'jobseeker' && {
+          country: form.country,
+          city: form.city,
+          resume: form.resume ? form.resume.name : null
+        }),
+        ...(userRole === 'employer' && {
+          companyName: form.companyName,
+          companyWebsite: form.companyWebsite,
+          businessPhone: form.businessPhone,
+          businessLocation: form.businessLocation
+        })
+      };
+      
+      await setDoc(doc(db, 'users', user.uid), userData);
+      
+      localStorage.setItem('role', userRole);
       setSuccess(true);
       setTimeout(() => navigate('/'), 1500);
     } catch (err: any) {
