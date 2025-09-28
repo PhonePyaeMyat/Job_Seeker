@@ -48,6 +48,9 @@ const EmployerHome: React.FC = () => {
     newApplicationsToday: 0
   });
 
+  // Debug logging
+  console.log('EmployerHome - User:', user?.email, 'Role:', localStorage.getItem('role'));
+
   useEffect(() => {
     if (!user) {
       setLoading(false);

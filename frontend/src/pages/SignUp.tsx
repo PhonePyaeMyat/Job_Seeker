@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, updateProfile } from 'firebase/auth';
 import { auth, db } from '../firebaseConfig';
 import { doc, setDoc } from 'firebase/firestore';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 
 interface BaseForm {
   role: 'jobseeker' | 'employer' | 'admin';
@@ -19,6 +19,7 @@ interface JobSeekerForm extends BaseForm {
   location: string;
   experience: string;
   skills: string;
+  resume: File | null;
 }
 
 interface EmployerForm extends BaseForm {
@@ -38,16 +39,17 @@ type SignUpForm = JobSeekerForm | EmployerForm | AdminForm;
 
 const SignUp: React.FC = () => {
   const [form, setForm] = useState<SignUpForm>({
-    role: 'jobseeker',
-    fullName: '',
-    email: '',
-    password: '',
-    confirmPassword: '',
+  role: 'jobseeker',
+  fullName: '',
+  email: '',
+  password: '',
+  confirmPassword: '',
     agree: false,
-    phone: '',
+  phone: '',
     location: '',
     experience: '',
-    skills: ''
+    skills: '',
+    resume: null
   } as SignUpForm);
   
   const [error, setError] = useState<string | null>(null);
@@ -56,12 +58,17 @@ const SignUp: React.FC = () => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [success, setSuccess] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
+  
+  // Get redirect info from location state
+  const redirectTo = location.state?.redirectTo;
+  const redirectMessage = location.state?.message;
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value, type, checked } = e.target as any;
+    const { name, value, type, checked, files } = e.target as any;
     setForm(prev => ({
       ...prev,
-      [name]: type === 'checkbox' ? checked : value
+      [name]: type === 'checkbox' ? checked : type === 'file' ? (files ? files[0] : null) : value
     }));
     setError(null);
   };
@@ -103,6 +110,20 @@ const SignUp: React.FC = () => {
         setError('Please enter your location');
         return false;
       }
+      if (!form.resume) {
+        setError('Please upload your resume');
+        return false;
+      }
+      // Validate file type
+      if (form.resume && !form.resume.type.includes('pdf') && !form.resume.type.includes('doc') && !form.resume.type.includes('docx')) {
+        setError('Please upload a PDF or Word document');
+        return false;
+      }
+      // Validate file size (5MB limit)
+      if (form.resume && form.resume.size > 5 * 1024 * 1024) {
+        setError('Resume file size must be less than 5MB');
+        return false;
+      }
     }
 
     if (form.role === 'employer') {
@@ -141,9 +162,9 @@ const SignUp: React.FC = () => {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, form.email, form.password);
       const user = userCredential.user;
-
+      
       await updateProfile(user, { displayName: form.fullName });
-
+      
       // Create user document with role-specific data
       const userData: any = {
         displayName: form.fullName,
@@ -168,13 +189,14 @@ const SignUp: React.FC = () => {
         userData.companySize = form.companySize;
         userData.industry = form.industry;
       }
-
+      
       await setDoc(doc(db, 'users', user.uid), userData);
       localStorage.setItem('role', form.role);
       
       setSuccess(true);
       setTimeout(() => {
-        navigate('/dashboard');
+        // Redirect to specific job if coming from landing page, otherwise go to dashboard
+        navigate(redirectTo || '/dashboard');
       }, 1500);
     } catch (err: any) {
       console.error('Signup error:', err);
@@ -208,7 +230,7 @@ const SignUp: React.FC = () => {
       const provider = new GoogleAuthProvider();
       const result = await signInWithPopup(auth, provider);
       const user = result.user;
-
+      
       const userData: any = {
         displayName: user.displayName || user.email?.split('@')[0] || 'User',
         email: user.email || '',
@@ -232,13 +254,14 @@ const SignUp: React.FC = () => {
         userData.companySize = form.companySize || '';
         userData.industry = form.industry || '';
       }
-
+      
       await setDoc(doc(db, 'users', user.uid), userData);
       localStorage.setItem('role', form.role);
       
       setSuccess(true);
       setTimeout(() => {
-        navigate('/dashboard');
+        // Redirect to specific job if coming from landing page, otherwise go to dashboard
+        navigate(redirectTo || '/dashboard');
       }, 1500);
     } catch (err: any) {
       console.error('Google signup error:', err);
@@ -271,7 +294,7 @@ const SignUp: React.FC = () => {
 
   const renderRoleSpecificFields = () => {
     if (form.role === 'jobseeker') {
-      return (
+  return (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -334,6 +357,41 @@ const SignUp: React.FC = () => {
             />
             <p className="text-xs text-gray-500 mt-1">Separate multiple skills with commas</p>
           </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Resume Upload *
+            </label>
+            <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-lg hover:border-gray-400 transition-colors">
+              <div className="space-y-1 text-center">
+                <svg className="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                  <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                <div className="flex text-sm text-gray-600">
+                  <label htmlFor="resume-upload" className="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500">
+                    <span>Upload a file</span>
+                    <input
+                      id="resume-upload"
+                      name="resume"
+                      type="file"
+                      accept=".pdf,.doc,.docx"
+                      onChange={handleChange}
+                      className="sr-only"
+                      required
+                    />
+                  </label>
+                  <p className="pl-1">or drag and drop</p>
+                </div>
+                <p className="text-xs text-gray-500">
+                  PDF, DOC, DOCX up to 5MB
+                </p>
+                {form.resume && (
+                  <p className="text-sm text-green-600 mt-2">
+                    ✓ {form.resume.name} ({(form.resume.size / 1024 / 1024).toFixed(2)} MB)
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
         </>
       );
     }
@@ -354,22 +412,22 @@ const SignUp: React.FC = () => {
               placeholder="Your company name"
               required
             />
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Company Website
               </label>
-              <input
+                        <input 
                 type="url"
                 name="companyWebsite"
                 value={form.companyWebsite}
-                onChange={handleChange}
+                          onChange={handleChange} 
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                 placeholder="https://yourcompany.com"
-              />
-            </div>
-            <div>
+                        />
+                          </div>
+                          <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Company Size
               </label>
@@ -386,12 +444,12 @@ const SignUp: React.FC = () => {
                 <option value="201-500">201-500 employees</option>
                 <option value="500+">500+ employees</option>
               </select>
-            </div>
-          </div>
+                          </div>
+                        </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Industry
-            </label>
+                      </label>
             <select
               name="industry"
               value={form.industry}
@@ -421,11 +479,11 @@ const SignUp: React.FC = () => {
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Admin Access Code
           </label>
-          <input
+                        <input 
             type="password"
             name="adminCode"
             value={form.adminCode}
-            onChange={handleChange}
+                          onChange={handleChange} 
             className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
             placeholder="Enter admin access code"
             required
@@ -449,6 +507,11 @@ const SignUp: React.FC = () => {
             {form.role === 'employer' && 'Connect with top talent and grow your team'}
             {form.role === 'admin' && 'Access system administration and management tools'}
           </p>
+          {redirectMessage && (
+            <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-blue-800 font-medium">{redirectMessage}</p>
+            </div>
+          )}
         </div>
 
         {/* Main Form */}
@@ -461,7 +524,7 @@ const SignUp: React.FC = () => {
             <div className="grid grid-cols-3 gap-3">
               <button
                 type="button"
-                onClick={() => setForm(prev => ({ ...prev, role: 'jobseeker', phone: '', location: '', experience: '', skills: '' } as JobSeekerForm))}
+                onClick={() => setForm(prev => ({ ...prev, role: 'jobseeker', phone: '', location: '', experience: '', skills: '', resume: null } as JobSeekerForm))}
                 className={`p-4 rounded-lg border-2 transition-all ${
                   form.role === 'jobseeker'
                     ? 'border-blue-500 bg-blue-50 text-blue-700'
@@ -488,11 +551,11 @@ const SignUp: React.FC = () => {
               >
                 <div className="text-center">
                   <svg className="w-8 h-8 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                  </svg>
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                            </svg>
                   <div className="font-medium">Employer</div>
                   <div className="text-xs text-gray-500">Hire top talent</div>
-                </div>
+                          </div>
               </button>
 
               <button
@@ -510,153 +573,153 @@ const SignUp: React.FC = () => {
                   </svg>
                   <div className="font-medium">Admin</div>
                   <div className="text-xs text-gray-500">System management</div>
-                </div>
+                          </div>
               </button>
-            </div>
-          </div>
+                    </div>
+                  </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Basic Information */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
                   Full Name
-                </label>
-                <input
+                          </label>
+                          <input 
                   type="text"
-                  name="fullName"
-                  value={form.fullName}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                            name="fullName" 
+                            value={form.fullName} 
+                            onChange={handleChange} 
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" 
                   placeholder="Enter your full name"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                            required 
+                          />
+                        </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
                   Email Address
-                </label>
-                <input
-                  type="email"
-                  name="email"
-                  value={form.email}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                  placeholder="Enter your email"
-                  required
-                />
-              </div>
-            </div>
+                      </label>
+                      <input 
+                        type="email" 
+                        name="email" 
+                        value={form.email} 
+                        onChange={handleChange} 
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" 
+                        placeholder="Enter your email"
+                        required 
+                      />
+                    </div>
+                  </div>
 
             {/* Role-Specific Fields */}
             {renderRoleSpecificFields()}
 
-            {/* Password Fields */}
+                  {/* Password Fields */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
                   Password
-                </label>
-                <div className="relative">
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    name="password"
-                    value={form.password}
-                    onChange={handleChange}
-                    className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                      </label>
+                      <div className="relative">
+                        <input 
+                          type={showPassword ? 'text' : 'password'} 
+                          name="password" 
+                          value={form.password} 
+                          onChange={handleChange} 
+                          className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" 
                     placeholder="Create a password"
-                    required
+                          required 
                     minLength={6}
-                  />
-                  <button
-                    type="button"
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                    onClick={() => setShowPassword(!showPassword)}
-                  >
-                    {showPassword ? (
-                      <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21" />
-                      </svg>
-                    ) : (
-                      <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                      </svg>
-                    )}
-                  </button>
-                </div>
-                
-                {form.password && (
-                  <div className="mt-2">
-                    <div className="flex items-center space-x-1">
-                      {[1, 2, 3, 4].map((level) => (
-                        <div
-                          key={level}
-                          className={`h-1 flex-1 rounded-full ${
-                            passwordStrength >= level ? strengthColors[passwordStrength - 1] : 'bg-gray-200'
-                          }`}
                         />
-                      ))}
-                    </div>
+                        <button
+                          type="button"
+                          className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                          onClick={() => setShowPassword(!showPassword)}
+                        >
+                          {showPassword ? (
+                            <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21" />
+                            </svg>
+                          ) : (
+                            <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                            </svg>
+                          )}
+                        </button>
+                      </div>
+                      
+                      {form.password && (
+                        <div className="mt-2">
+                          <div className="flex items-center space-x-1">
+                      {[1, 2, 3, 4].map((level) => (
+                              <div 
+                                key={level}
+                                className={`h-1 flex-1 rounded-full ${
+                                  passwordStrength >= level ? strengthColors[passwordStrength - 1] : 'bg-gray-200'
+                                }`}
+                        />
+                            ))}
+                          </div>
                     <p className={`text-xs mt-1 ${passwordStrength >= 2 ? 'text-green-600' : 'text-gray-500'}`}>
-                      {passwordStrength > 0 ? strengthLabels[passwordStrength - 1] : ''}
-                    </p>
-                  </div>
-                )}
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                            {passwordStrength > 0 ? strengthLabels[passwordStrength - 1] : ''}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
                   Confirm Password
-                </label>
-                <div className="relative">
-                  <input
-                    type={showConfirmPassword ? 'text' : 'password'}
-                    name="confirmPassword"
-                    value={form.confirmPassword}
-                    onChange={handleChange}
-                    className={`w-full px-4 py-3 pr-12 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all ${
-                      form.confirmPassword && form.password !== form.confirmPassword
-                        ? 'border-red-300 bg-red-50'
-                        : 'border-gray-300'
-                    }`}
-                    placeholder="Confirm your password"
-                    required
+                      </label>
+                      <div className="relative">
+                        <input 
+                          type={showConfirmPassword ? 'text' : 'password'} 
+                          name="confirmPassword" 
+                          value={form.confirmPassword} 
+                          onChange={handleChange} 
+                          className={`w-full px-4 py-3 pr-12 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all ${
+                            form.confirmPassword && form.password !== form.confirmPassword 
+                              ? 'border-red-300 bg-red-50' 
+                              : 'border-gray-300'
+                          }`}
+                          placeholder="Confirm your password"
+                          required 
                     minLength={6}
-                  />
-                  <button
-                    type="button"
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  >
-                    {showConfirmPassword ? (
-                      <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21" />
-                      </svg>
-                    ) : (
-                      <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                      </svg>
-                    )}
-                  </button>
-                </div>
-                {form.confirmPassword && form.password !== form.confirmPassword && (
-                  <p className="text-xs text-red-500 mt-1">Passwords don't match</p>
-                )}
-              </div>
-            </div>
+                        />
+                        <button
+                          type="button"
+                          className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        >
+                          {showConfirmPassword ? (
+                            <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21" />
+                            </svg>
+                          ) : (
+                            <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                            </svg>
+                          )}
+                        </button>
+                      </div>
+                      {form.confirmPassword && form.password !== form.confirmPassword && (
+                        <p className="text-xs text-red-500 mt-1">Passwords don't match</p>
+                      )}
+                    </div>
+                  </div>
 
             {/* Terms and Conditions */}
             <div className="flex items-start">
-              <input
-                type="checkbox"
-                name="agree"
-                checked={form.agree}
-                onChange={handleChange}
-                className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                required
-              />
+                      <input 
+                        type="checkbox" 
+                        name="agree" 
+                        checked={form.agree} 
+                        onChange={handleChange} 
+                        className="mt-1 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" 
+                        required 
+                      />
               <label className="ml-2 text-sm text-gray-600">
                 I agree to the{' '}
                 <Link to="/terms" className="text-blue-600 hover:underline">
@@ -666,8 +729,8 @@ const SignUp: React.FC = () => {
                 <Link to="/privacy" className="text-blue-600 hover:underline">
                   Privacy Policy
                 </Link>
-              </label>
-            </div>
+                    </label>
+                  </div>
 
             {/* Success Message */}
             {success && (
@@ -675,18 +738,18 @@ const SignUp: React.FC = () => {
                 <div className="flex items-center">
                   <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
+                        </svg>
                   Account created successfully! Redirecting to your dashboard...
-                </div>
-              </div>
-            )}
+                    </div>
+                  </div>
+              )}
 
-            {/* Error Message */}
-            {error && (
+              {/* Error Message */}
+              {error && (
               <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
                 {error}
-              </div>
-            )}
+                </div>
+              )}
 
             {/* Submit Button */}
             <button
@@ -714,7 +777,7 @@ const SignUp: React.FC = () => {
                 'Create Account'
               )}
             </button>
-          </form>
+            </form>
 
           {/* Divider */}
           <div className="mt-6">

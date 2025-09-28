@@ -1,11 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Job, getJobs } from '../services/jobService';
 import JobCard from './JobCard';
+import { useAuthState } from 'react-firebase-hooks/auth';
+import { auth } from '../firebaseConfig';
 
 const LandingPage: React.FC = () => {
   const [featuredJobs, setFeaturedJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
+  const [user] = useAuthState(auth);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const fetchFeaturedJobs = async () => {
@@ -21,6 +25,21 @@ const LandingPage: React.FC = () => {
 
     fetchFeaturedJobs();
   }, []);
+
+  const handleApply = (jobId: string) => {
+    if (!user) {
+      // If user is not logged in, redirect to signup with a message
+      navigate('/signup', { 
+        state: { 
+          message: 'Please create an account to apply for jobs',
+          redirectTo: `/jobs/${jobId}`
+        } 
+      });
+    } else {
+      // If user is logged in, redirect to job details page
+      navigate(`/jobs/${jobId}`);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -109,7 +128,7 @@ const LandingPage: React.FC = () => {
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
               {featuredJobs.map(job => (
                 <div key={job.id} className="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow">
-                  <JobCard job={job} onApply={() => {}} />
+                  <JobCard job={job} onApply={handleApply} />
                 </div>
               ))}
             </div>

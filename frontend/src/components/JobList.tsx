@@ -3,7 +3,7 @@ import JobSearch from './JobSearch';
 import JobCard from './JobCard';
 import BackendStatus from './BackendStatus';
 import { searchJobs, Job, getJobs, applyToJob } from '../services/jobService';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 
 const JobList = () => {
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -14,6 +14,7 @@ const JobList = () => {
   const [total, setTotal] = useState(0);
   const [filters, setFilters] = useState<{ keyword: string; location: string; type: string } | null>(null);
   const size = 10;
+  const navigate = useNavigate();
 
   const fetchJobs = async (pageNum = 0, filtersArg = filters) => {
     try {
@@ -67,11 +68,10 @@ const JobList = () => {
 
   const handleApply = async (jobId: string) => {
     try {
-      // In this list, we don't have user context; just navigate to details
-      // or call backend apply if needed. Keeping console for now.
-      console.log('Applying for job:', jobId);
+      // Navigate to job details page where user can apply
+      navigate(`/jobs/${jobId}`);
     } catch (err) {
-      console.error('Failed to apply:', err);
+      console.error('Error navigating to job:', err);
     }
   };
 
