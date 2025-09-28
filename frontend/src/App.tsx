@@ -5,6 +5,7 @@ import JobForm from './components/JobForm';
 import SignUp from './pages/SignUp';
 import Login from './pages/Login';
 import JobSeekerDashboard from './pages/JobSeekerDashboard';
+import EmployerDashboard from './pages/EmployerDashboard';
 import LandingPage from './components/LandingPage';
 import EmployerHome from './components/EmployerHome';
 import JobSeekerHome from './components/JobSeekerHome';
@@ -17,6 +18,10 @@ import { useAuthState } from 'react-firebase-hooks/auth';
 import Header from './components/Header';
 import Footer from './components/Footer';
 import JobDetails from './components/JobDetails';
+import About from './pages/About';
+import Contact from './pages/Contact';
+import Terms from './pages/Terms';
+import Privacy from './pages/Privacy';
 
 function App() {
   const [user, loading] = useAuthState(auth);
@@ -38,9 +43,20 @@ function App() {
             <Route path="/post-job" element={<JobForm />} />
             <Route path="/signup" element={<SignUp />} />
             <Route path="/login" element={<Login />} />
-            <Route path="/dashboard" element={user && role === 'jobseeker' ? <JobSeekerDashboard /> : <Navigate to="/login" />} />
+            <Route path="/dashboard" element={
+              user ? (
+                role === 'jobseeker' ? <JobSeekerDashboard /> :
+                role === 'employer' ? <EmployerDashboard /> :
+                role === 'admin' ? <AdminPanel /> :
+                <Navigate to="/login" />
+              ) : <Navigate to="/login" />
+            } />
             <Route path="/profile" element={user ? <Profile /> : <Navigate to="/login" />} />
             <Route path="/admin" element={user && (user.email === 'admin@jobseeker.com' || user.displayName === 'admin') ? <AdminPanel /> : <Navigate to="/login" />} />
+            <Route path="/about" element={<About />} />
+            <Route path="/contact" element={<Contact />} />
+            <Route path="/terms" element={<Terms />} />
+            <Route path="/privacy" element={<Privacy />} />
             <Route path="/500" element={<ServerError />} />
             <Route path="*" element={<NotFound />} />
           </Routes> 

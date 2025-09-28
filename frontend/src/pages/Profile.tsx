@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { auth, db } from '../firebaseConfig';
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
-import { updateProfile, updatePassword } from 'firebase/auth';
+import { updateProfile, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
 import { useNavigate } from 'react-router-dom';
 
 interface UserProfile {
@@ -43,6 +43,8 @@ const Profile: React.FC = () => {
     newPassword: '',
     confirmPassword: ''
   });
+  const [showReauthModal, setShowReauthModal] = useState(false);
+  const [reauthPassword, setReauthPassword] = useState('');
   const navigate = useNavigate();
 
   // Load user profile data
@@ -133,7 +135,13 @@ const Profile: React.FC = () => {
   };
 
   const handleSkillsChange = (skillsText: string) => {
-    const skillsArray = skillsText.split(',').map(s => s.trim()).filter(Boolean);
+    // Allow typing with spaces, only process when user finishes typing
+    // Split by comma and clean up, but preserve spaces within skill names
+    const skillsArray = skillsText
+      .split(',')
+      .map(s => s.trim()) // Remove leading/trailing whitespace
+      .filter(Boolean); // Remove empty strings
+    
     handleInputChange('skills', skillsArray);
   };
 
@@ -228,10 +236,44 @@ const Profile: React.FC = () => {
     } catch (err: any) {
       console.error('Error deleting account:', err);
       if (err.code === 'auth/requires-recent-login') {
-        setError('Please log out and log back in before deleting your account');
+        setShowReauthModal(true);
+        setError('For security reasons, please re-enter your password to confirm account deletion.');
       } else {
         setError('Failed to delete account. Please try again.');
       }
+    }
+  };
+
+  const handleReauthAndDelete = async () => {
+    if (!user || !reauthPassword) return;
+
+    try {
+      setSaving(true);
+      setError(null);
+
+      // Re-authenticate the user
+      const credential = EmailAuthProvider.credential(user.email!, reauthPassword);
+      await reauthenticateWithCredential(user, credential);
+
+      // Now delete the account
+      await setDoc(doc(db, 'users', user.uid), { deleted: true, deletedAt: new Date().toISOString() });
+      await user.delete();
+      
+      // Clear local storage
+      localStorage.removeItem('role');
+      
+      navigate('/');
+    } catch (err: any) {
+      console.error('Error during re-authentication:', err);
+      if (err.code === 'auth/wrong-password') {
+        setError('Incorrect password. Please try again.');
+      } else if (err.code === 'auth/invalid-credential') {
+        setError('Invalid credentials. Please check your password.');
+      } else {
+        setError('Re-authentication failed. Please try again.');
+      }
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -388,14 +430,15 @@ const Profile: React.FC = () => {
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       Role
                     </label>
-                    <select
-                      value={profile.role}
-                      onChange={(e) => handleInputChange('role', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                    >
-                      <option value="jobseeker">Job Seeker</option>
-                      <option value="employer">Employer</option>
-                    </select>
+                    <input
+                      type="text"
+                      value={profile.role === 'jobseeker' ? 'Job Seeker' : 'Employer'}
+                      disabled
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100 text-gray-500"
+                    />
+                    <p className="mt-1 text-sm text-gray-500">
+                      Your role cannot be changed after registration
+                    </p>
                   </div>
 
                   <div>
@@ -433,18 +476,33 @@ const Profile: React.FC = () => {
                   <div className="space-y-6">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Skills (comma-separated)
+                        Skills
                       </label>
                       <input
                         type="text"
                         value={profile.skills?.join(', ') || ''}
                         onChange={(e) => handleSkillsChange(e.target.value)}
                         className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                        placeholder="React, Node.js, Python, etc."
+                        placeholder="React, Node.js, Python, JavaScript, etc."
                       />
                       <p className="mt-1 text-sm text-gray-500">
-                        Current skills: {profile.skills && profile.skills.length > 0 ? profile.skills.join(', ') : 'None'}
+                        Separate multiple skills with commas. You can include spaces in skill names.
                       </p>
+                      {profile.skills && profile.skills.length > 0 && (
+                        <div className="mt-2">
+                          <p className="text-sm font-medium text-gray-700 mb-1">Your skills:</p>
+                          <div className="flex flex-wrap gap-2">
+                            {profile.skills.map((skill, index) => (
+                              <span 
+                                key={index}
+                                className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+                              >
+                                {skill}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     <div>
@@ -665,6 +723,72 @@ const Profile: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Re-authentication Modal */}
+      {showReauthModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              Confirm Account Deletion
+            </h3>
+            <p className="text-gray-600 mb-4">
+              For security reasons, please enter your current password to confirm account deletion.
+            </p>
+            
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Current Password
+              </label>
+              <input
+                type="password"
+                value={reauthPassword}
+                onChange={(e) => setReauthPassword(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                placeholder="Enter your current password"
+                autoFocus
+              />
+            </div>
+
+            {error && (
+              <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded text-sm">
+                {error}
+              </div>
+            )}
+
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => {
+                  setShowReauthModal(false);
+                  setReauthPassword('');
+                  setError(null);
+                }}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+                disabled={saving}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleReauthAndDelete}
+                disabled={saving || !reauthPassword}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                  saving || !reauthPassword
+                    ? 'bg-gray-400 cursor-not-allowed'
+                    : 'bg-red-600 hover:bg-red-700'
+                } text-white`}
+              >
+                {saving ? (
+                  <span className="flex items-center">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Deleting...
+                  </span>
+                ) : (
+                  'Delete Account'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

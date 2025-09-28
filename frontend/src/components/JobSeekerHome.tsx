@@ -42,6 +42,7 @@ const JobSeekerHome: React.FC = () => {
   const [user, userLoading] = useAuthState(auth);
   const [loading, setLoading] = useState(true);
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [allJobs, setAllJobs] = useState<Job[]>([]); // Keep original jobs data
   const [featuredJobs, setFeaturedJobs] = useState<Job[]>([]);
   const [recentJobs, setRecentJobs] = useState<Job[]>([]);
   const [savedJobs, setSavedJobs] = useState<Job[]>([]);
@@ -116,6 +117,7 @@ const JobSeekerHome: React.FC = () => {
 
       console.log('Loaded jobs:', jobsData.length);
       setJobs(jobsData);
+      setAllJobs(jobsData); // Keep original data
     } catch (err) {
       console.error('Error loading all jobs:', err);
       // Try to load without any filters as absolute fallback
@@ -130,6 +132,7 @@ const JobSeekerHome: React.FC = () => {
         } as Job));
         console.log('Fallback: Loaded jobs without filters:', jobsData.length);
         setJobs(jobsData);
+        setAllJobs(jobsData); // Keep original data
       } catch (fallbackErr) {
         console.error('Even fallback query failed:', fallbackErr);
         throw fallbackErr;
@@ -278,31 +281,6 @@ const JobSeekerHome: React.FC = () => {
 
   const handleSearch = (filters: { keyword: string; location: string; type: string }) => {
     setSearchFilters(filters);
-    // Filter jobs based on search criteria
-    let filteredJobs = [...jobs];
-    
-    if (filters.keyword) {
-      const keyword = filters.keyword.toLowerCase();
-      filteredJobs = filteredJobs.filter(job =>
-        job.title.toLowerCase().includes(keyword) ||
-        job.company.toLowerCase().includes(keyword) ||
-        job.description.toLowerCase().includes(keyword)
-      );
-    }
-    
-    if (filters.location) {
-      const location = filters.location.toLowerCase();
-      filteredJobs = filteredJobs.filter(job =>
-        job.location.toLowerCase().includes(location)
-      );
-    }
-    
-    if (filters.type) {
-      filteredJobs = filteredJobs.filter(job => job.type === filters.type);
-    }
-    
-    // Update the jobs display with filtered results
-    setJobs(filteredJobs);
     setActiveTab('all');
   };
 
@@ -316,12 +294,15 @@ const JobSeekerHome: React.FC = () => {
       await applyToJob(jobId, user.uid);
 
       // Optimistically update local state so UI reflects the application
-      setJobs((prevJobs: Job[]) => prevJobs.map((job: Job) => {
+      const updateJobApplicants = (prevJobs: Job[]) => prevJobs.map((job: Job) => {
         if (job.id !== jobId) return job;
         const applicants = Array.isArray(job.applicants) ? job.applicants : [];
         if (applicants.includes(user.uid)) return job;
         return { ...job, applicants: [...applicants, user.uid] } as Job;
-      }));
+      });
+      
+      setJobs(updateJobApplicants);
+      setAllJobs(updateJobApplicants);
 
       setRecentJobs((prev: Job[]) => prev.map((job: Job) => {
         if (job.id !== jobId) return job;
@@ -345,23 +326,58 @@ const JobSeekerHome: React.FC = () => {
   };
 
   const getDisplayJobs = () => {
+    let displayJobs: Job[] = [];
+    
     switch (activeTab) {
       case 'featured':
-        return featuredJobs.length > 0 ? featuredJobs : jobs.filter(job => job.featured);
+        displayJobs = featuredJobs.length > 0 ? featuredJobs : allJobs.filter(job => job.featured);
+        break;
       case 'recent':
-        return recentJobs.length > 0 ? recentJobs : jobs.slice(0, 8);
+        displayJobs = recentJobs.length > 0 ? recentJobs : allJobs.slice(0, 8);
+        break;
       case 'saved':
-        return savedJobs;
+        displayJobs = savedJobs;
+        break;
       default:
-        return jobs;
+        displayJobs = allJobs;
+        break;
     }
+    
+    // Apply search filters if they exist
+    if (searchFilters && activeTab === 'all') {
+      let filteredJobs = [...displayJobs];
+      
+      if (searchFilters.keyword) {
+        const keyword = searchFilters.keyword.toLowerCase();
+        filteredJobs = filteredJobs.filter(job =>
+          job.title.toLowerCase().includes(keyword) ||
+          job.company.toLowerCase().includes(keyword) ||
+          job.description.toLowerCase().includes(keyword)
+        );
+      }
+      
+      if (searchFilters.location) {
+        const location = searchFilters.location.toLowerCase();
+        filteredJobs = filteredJobs.filter(job =>
+          job.location.toLowerCase().includes(location)
+        );
+      }
+      
+      if (searchFilters.type) {
+        filteredJobs = filteredJobs.filter(job => job.type === searchFilters.type);
+      }
+      
+      return filteredJobs;
+    }
+    
+    return displayJobs;
   };
 
   const handleSaveChange = (jobId: string, isSaved: boolean) => {
     if (isSaved) {
       setSavedJobIds((prev: string[]) => [...prev, jobId]);
-      // Add job to saved jobs if it exists in the current jobs list
-      const job = jobs.find(j => j.id === jobId);
+      // Add job to saved jobs if it exists in the all jobs list
+      const job = allJobs.find(j => j.id === jobId);
       if (job) {
         setSavedJobs((prev: Job[]) => [...prev, job]);
       }

@@ -121,7 +121,19 @@ const JobDetails: React.FC = () => {
       </Link>
       
       <div className="mb-6">
-        <h1 className="text-3xl font-bold mb-2">{job.title}</h1>
+        <div className="flex items-start justify-between mb-2">
+          <h1 className="text-3xl font-bold">{job.title}</h1>
+          {hasApplied && (
+            <div className="ml-4 flex-shrink-0">
+              <span className="inline-flex items-center gap-2 px-3 py-1 bg-green-100 text-green-800 text-sm font-medium rounded-full border border-green-200">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                Applied
+              </span>
+            </div>
+          )}
+        </div>
         <div className="text-gray-600 mb-4 flex items-center gap-2">
           <span className="font-medium">{job.company}</span>
           <span>•</span>
@@ -215,23 +227,61 @@ const JobDetails: React.FC = () => {
           </div>
 
           {applyMsg && (
-            <div className={`mt-4 p-3 rounded ${
+            <div className={`mt-4 p-4 rounded-lg ${
               applyMsg.includes('successfully') 
-                ? 'bg-green-100 text-green-800 border border-green-200'
-                : 'bg-red-100 text-red-800 border border-red-200'
+                ? 'bg-green-50 text-green-800 border border-green-200'
+                : 'bg-red-50 text-red-800 border border-red-200'
             }`}>
-              {applyMsg}
+              <div className="flex items-center gap-3">
+                {applyMsg.includes('successfully') ? (
+                  <div className="flex-shrink-0">
+                    <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center">
+                      <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex-shrink-0">
+                    <div className="w-6 h-6 bg-red-100 rounded-full flex items-center justify-center">
+                      <svg className="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </div>
+                  </div>
+                )}
+                <div className="flex-1">
+                  <p className="font-medium">{applyMsg}</p>
+                  {applyMsg.includes('successfully') && (
+                    <p className="text-sm text-green-700 mt-1">
+                      The employer will review your application and contact you if you're selected for an interview.
+                    </p>
+                  )}
+                </div>
+              </div>
             </div>
           )}
 
           {hasApplied && (
-            <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded">
-              <p className="text-blue-800 text-sm">
-                ✓ You have already applied to this position. 
-                <Link to="/dashboard" className="text-blue-600 hover:underline ml-1">
-                  View your applications
-                </Link>
-              </p>
+            <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
+              <div className="flex items-center gap-3">
+                <div className="flex-shrink-0">
+                  <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                    <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </div>
+                </div>
+                <div className="flex-1">
+                  <h4 className="text-green-800 font-medium text-sm">Application Submitted Successfully!</h4>
+                  <p className="text-green-700 text-sm mt-1">
+                    Your application has been sent to the employer. You can track your applications in your dashboard.
+                  </p>
+                  <Link to="/dashboard" className="inline-flex items-center text-green-600 hover:text-green-700 text-sm font-medium mt-2">
+                    View Dashboard →
+                  </Link>
+                </div>
+              </div>
             </div>
           )}
         </div>

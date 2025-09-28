@@ -141,7 +141,7 @@ const JobSeekerDashboard: React.FC = () => {
       if (jobToAdd) {
         setSavedJobs(prev => {
           const exists = prev.some(job => job.id === jobId);
-          return exists ? prev : [...prev, jobToAdd];
+          return exists ? prev : [...prev, jobToAdd!];
         });
       }
     } else {
