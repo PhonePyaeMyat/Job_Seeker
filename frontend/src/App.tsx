@@ -6,6 +6,7 @@ import SignUp from './pages/SignUp';
 import Login from './pages/Login';
 import JobSeekerDashboard from './pages/JobSeekerDashboard';
 import EmployerDashboard from './pages/EmployerDashboard';
+import EmployerHome from './components/EmployerHome';
 import Profile from './pages/Profile';
 import AdminPanel from './pages/AdminPanel';
 import NotFound from './pages/NotFound';
@@ -30,15 +31,15 @@ function App() {
       <main>
         
           <Routes>
-            <Route path="/" element={<JobList />} />
+            <Route path="/" element={user ? (role === 'admin' ? <AdminPanel /> : role === 'employer' ? <EmployerHome /> : <JobList />) : <JobList />} />
             <Route path="/jobs" element={<JobList />} />
             <Route path="/jobs/:id" element={<JobDetails />} />
             <Route path="/post-job" element={<JobForm />} />
             <Route path="/signup" element={<SignUp />} />
             <Route path="/login" element={<Login />} />
-            <Route path="/dashboard" element={user ? (role === 'employer' ? <EmployerDashboard /> : <JobSeekerDashboard />) : <Navigate to="/login" />} />
+            <Route path="/dashboard" element={user ? (role === 'admin' ? <AdminPanel /> : role === 'employer' ? <EmployerDashboard /> : <JobSeekerDashboard />) : <Navigate to="/login" />} />
             <Route path="/profile" element={user ? <Profile /> : <Navigate to="/login" />} />
-            <Route path="/admin" element={user ? <AdminPanel /> : <Navigate to="/login" />} />
+            <Route path="/admin" element={user && (user.email === 'admin@jobseeker.com' || user.displayName === 'admin') ? <AdminPanel /> : <Navigate to="/login" />} />
             <Route path="/500" element={<ServerError />} />
             <Route path="*" element={<NotFound />} />
           </Routes> 

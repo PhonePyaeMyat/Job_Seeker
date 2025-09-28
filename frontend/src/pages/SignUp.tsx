@@ -66,8 +66,15 @@ const EnhancedSignUp: React.FC = () => {
     }
     setLoading(true);
     try {
-      await createUserWithEmailAndPassword(auth, form.email, form.password);
-      localStorage.setItem('role', form.role);
+      const userCredential = await createUserWithEmailAndPassword(auth, form.email, form.password);
+      
+      // Set admin role for specific admin credentials
+      let userRole = form.role;
+      if (form.email === 'admin@jobseeker.com' || form.fullName === 'admin') {
+        userRole = 'admin';
+      }
+      
+      localStorage.setItem('role', userRole);
       setSuccess(true);
       setTimeout(() => navigate('/dashboard'), 1500);
     } catch (err: any) {

@@ -69,8 +69,8 @@ const AdminPanel: React.FC = () => {
   const [lastDoc, setLastDoc] = useState<DocumentSnapshot | null>(null);
   const pageSize = 10;
 
-  // Check if current user is admin (you can implement your own logic)
-  const isAdmin = user?.email?.endsWith('@admin.com') || user?.email === 'admin@jobseeker.com';
+  // Check if current user is admin
+  const isAdmin = user?.email === 'admin@jobseeker.com' || user?.displayName === 'admin';
 
   useEffect(() => {
     if (!user || !isAdmin) {
