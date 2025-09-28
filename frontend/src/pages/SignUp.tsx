@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
-import { auth } from '../firebaseConfig';
+import { createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, updateProfile } from 'firebase/auth';
+import { auth, db } from '../firebaseConfig';
+import { doc, setDoc } from 'firebase/firestore';
 import { useNavigate, Link } from 'react-router-dom';
 
 const initialState = {
@@ -11,7 +12,8 @@ const initialState = {
   confirmPassword: '',
   phone: '',
   resume: null as File | null,
-  location: '',
+  country: '',
+  city: '',
   linkedin: '',
   companyName: '',
   companyWebsite: '',
@@ -19,6 +21,52 @@ const initialState = {
   businessLocation: '',
   agree: false,
   alerts: false,
+};
+
+// Country and city data
+const countries = [
+  'United States', 'Canada', 'United Kingdom', 'Australia', 'Germany', 'France', 'Netherlands',
+  'Sweden', 'Norway', 'Denmark', 'Finland', 'Switzerland', 'Austria', 'Belgium', 'Ireland',
+  'New Zealand', 'Singapore', 'Japan', 'South Korea', 'India', 'Brazil', 'Mexico', 'Argentina',
+  'Chile', 'Colombia', 'Peru', 'South Africa', 'Nigeria', 'Kenya', 'Egypt', 'Morocco',
+  'Israel', 'UAE', 'Saudi Arabia', 'Turkey', 'Poland', 'Czech Republic', 'Hungary', 'Romania',
+  'Bulgaria', 'Croatia', 'Slovenia', 'Slovakia', 'Estonia', 'Latvia', 'Lithuania', 'Other'
+];
+
+const citiesByCountry: { [key: string]: string[] } = {
+  'United States': [
+    'New York', 'Los Angeles', 'Chicago', 'Houston', 'Phoenix', 'Philadelphia', 'San Antonio',
+    'San Diego', 'Dallas', 'San Jose', 'Austin', 'Jacksonville', 'Fort Worth', 'Columbus',
+    'Charlotte', 'San Francisco', 'Indianapolis', 'Seattle', 'Denver', 'Washington', 'Boston',
+    'El Paso', 'Nashville', 'Detroit', 'Oklahoma City', 'Portland', 'Las Vegas', 'Memphis',
+    'Louisville', 'Baltimore', 'Milwaukee', 'Albuquerque', 'Tucson', 'Fresno', 'Sacramento',
+    'Mesa', 'Kansas City', 'Atlanta', 'Long Beach', 'Colorado Springs', 'Raleigh', 'Miami',
+    'Virginia Beach', 'Omaha', 'Oakland', 'Minneapolis', 'Tulsa', 'Arlington', 'Tampa', 'Other'
+  ],
+  'Canada': [
+    'Toronto', 'Montreal', 'Vancouver', 'Calgary', 'Edmonton', 'Ottawa', 'Winnipeg', 'Quebec City',
+    'Hamilton', 'Kitchener', 'London', 'Victoria', 'Halifax', 'Oshawa', 'Windsor', 'Saskatoon',
+    'Regina', 'Sherbrooke', 'Barrie', 'Kelowna', 'Abbotsford', 'Sudbury', 'Kingston', 'Saguenay',
+    'Trois-Rivieres', 'Guelph', 'Cambridge', 'Whitehorse', 'Saint John', 'Thunder Bay', 'Other'
+  ],
+  'United Kingdom': [
+    'London', 'Birmingham', 'Manchester', 'Glasgow', 'Liverpool', 'Leeds', 'Sheffield', 'Edinburgh',
+    'Bristol', 'Cardiff', 'Belfast', 'Leicester', 'Wakefield', 'Coventry', 'Nottingham', 'Bradford',
+    'Newcastle', 'Hull', 'Plymouth', 'Stoke-on-Trent', 'Wolverhampton', 'Derby', 'Southampton',
+    'Portsmouth', 'Northampton', 'Reading', 'Luton', 'Preston', 'Sunderland', 'Norwich', 'Other'
+  ],
+  'Australia': [
+    'Sydney', 'Melbourne', 'Brisbane', 'Perth', 'Adelaide', 'Gold Coast', 'Newcastle', 'Canberra',
+    'Wollongong', 'Geelong', 'Hobart', 'Townsville', 'Cairns', 'Toowoomba', 'Darwin', 'Ballarat',
+    'Bendigo', 'Albury', 'Launceston', 'Mackay', 'Rockhampton', 'Bunbury', 'Coffs Harbour', 'Other'
+  ],
+  'Germany': [
+    'Berlin', 'Hamburg', 'Munich', 'Cologne', 'Frankfurt', 'Stuttgart', 'Düsseldorf', 'Dortmund',
+    'Essen', 'Leipzig', 'Bremen', 'Dresden', 'Hannover', 'Nuremberg', 'Duisburg', 'Bochum',
+    'Wuppertal', 'Bielefeld', 'Bonn', 'Münster', 'Karlsruhe', 'Mannheim', 'Augsburg', 'Wiesbaden',
+    'Gelsenkirchen', 'Mönchengladbach', 'Braunschweig', 'Chemnitz', 'Kiel', 'Aachen', 'Other'
+  ],
+  'Other': ['Other']
 };
 
 const EnhancedSignUp: React.FC = () => {
@@ -29,6 +77,7 @@ const EnhancedSignUp: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [currentStep, setCurrentStep] = useState(1);
+  const [availableCities, setAvailableCities] = useState<string[]>([]);
   const navigate = useNavigate();
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -39,19 +88,60 @@ const EnhancedSignUp: React.FC = () => {
       setForm({ ...form, [name]: files[0] });
     } else {
       setForm({ ...form, [name]: value });
+      
+      // If country changes, update available cities and reset city
+      if (name === 'country') {
+        const cities = citiesByCountry[value] || [];
+        setAvailableCities(cities);
+        setForm(prev => ({ ...prev, city: '' }));
+      }
     }
   };
 
   const validate = () => {
+    // Basic validation
     if (!form.fullName) return 'Full name is required.';
     if (!form.email) return 'Email is required.';
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email)) return 'Invalid email address.';
     if (form.password.length < 8) return 'Password must be at least 8 characters.';
     if (form.password !== form.confirmPassword) return 'Passwords do not match.';
     if (!form.agree) return 'You must agree to the Terms and Conditions.';
-    if (form.role === 'jobseeker' && !form.location) return 'Location is required.';
-    if (form.role === 'employer' && !form.companyName) return 'Company name is required.';
-    if (form.role === 'employer' && !form.businessLocation) return 'Business location is required.';
+
+    // Job seeker specific validation
+    if (form.role === 'jobseeker') {
+      // Name validation - should be realistic (at least 2 words, no numbers/special chars)
+      const nameWords = form.fullName.trim().split(/\s+/);
+      if (nameWords.length < 2) return 'Please enter your full name (first and last name).';
+      if (!/^[a-zA-Z\s'-]+$/.test(form.fullName)) return 'Name should only contain letters, spaces, hyphens, and apostrophes.';
+      if (form.fullName.length < 3) return 'Name is too short.';
+      if (form.fullName.length > 50) return 'Name is too long.';
+
+      // Phone validation - should be realistic phone number
+      if (!form.phone) return 'Phone number is required for job seekers.';
+      const phoneRegex = /^[\+]?[1-9][\d]{0,15}$/;
+      const cleanPhone = form.phone.replace(/[\s\-\(\)]/g, '');
+      if (!phoneRegex.test(cleanPhone)) return 'Please enter a valid phone number.';
+      if (cleanPhone.length < 10) return 'Phone number is too short.';
+      if (cleanPhone.length > 15) return 'Phone number is too long.';
+
+      // Location validation - country and city required
+      if (!form.country) return 'Country is required for job seekers.';
+      if (!form.city) return 'City is required for job seekers.';
+
+      // Resume validation - required for job seekers
+      if (!form.resume) return 'Resume upload is required for job seekers.';
+      if (form.resume && form.resume.size > 5 * 1024 * 1024) return 'Resume file size should be less than 5MB.';
+      if (form.resume && !form.resume.type.includes('pdf') && !form.resume.type.includes('doc') && !form.resume.type.includes('docx')) {
+        return 'Resume must be a PDF, DOC, or DOCX file.';
+      }
+    }
+
+    // Employer validation
+    if (form.role === 'employer') {
+      if (!form.companyName) return 'Company name is required.';
+      if (!form.businessLocation) return 'Business location is required.';
+    }
+
     return null;
   };
 
@@ -67,6 +157,7 @@ const EnhancedSignUp: React.FC = () => {
     setLoading(true);
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, form.email, form.password);
+      const user = userCredential.user;
       
       // Set admin role for specific admin credentials
       let userRole = form.role;
@@ -74,9 +165,35 @@ const EnhancedSignUp: React.FC = () => {
         userRole = 'admin';
       }
       
+      // Update Firebase Auth profile
+      await updateProfile(user, { displayName: form.fullName });
+      
+      // Create user document in Firestore
+      const userData = {
+        displayName: form.fullName,
+        email: form.email,
+        role: userRole,
+        createdAt: new Date().toISOString(),
+        phone: form.phone || '',
+        linkedin: form.linkedin || '',
+        ...(userRole === 'jobseeker' && {
+          country: form.country,
+          city: form.city,
+          resume: form.resume ? form.resume.name : null
+        }),
+        ...(userRole === 'employer' && {
+          companyName: form.companyName,
+          companyWebsite: form.companyWebsite,
+          businessPhone: form.businessPhone,
+          businessLocation: form.businessLocation
+        })
+      };
+      
+      await setDoc(doc(db, 'users', user.uid), userData);
+      
       localStorage.setItem('role', userRole);
       setSuccess(true);
-      setTimeout(() => navigate('/dashboard'), 1500);
+      setTimeout(() => navigate('/'), 1500);
     } catch (err: any) {
       const code = err?.code as string | undefined;
       let friendly = err?.message || 'Sign up failed.';
@@ -114,7 +231,7 @@ const EnhancedSignUp: React.FC = () => {
       await signInWithPopup(auth, provider);
       localStorage.setItem('role', form.role);
       setSuccess(true);
-      setTimeout(() => navigate('/dashboard'), 1500);
+      setTimeout(() => navigate('/'), 1500);
     } catch (err: any) {
       const code = err?.code as string | undefined;
       let friendly = err?.message || 'Google sign-in failed.';
@@ -251,19 +368,20 @@ const EnhancedSignUp: React.FC = () => {
 
                   {/* Personal Information */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Full Name <span className="text-red-500">*</span>
-                      </label>
-                      <input 
-                        name="fullName" 
-                        value={form.fullName} 
-                        onChange={handleChange} 
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" 
-                        placeholder="Enter your full name"
-                        required 
-                      />
-                    </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Full Name <span className="text-red-500">*</span>
+                          </label>
+                          <input 
+                            name="fullName" 
+                            value={form.fullName} 
+                            onChange={handleChange} 
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" 
+                            placeholder="First Name Last Name (e.g., John Smith)"
+                            required 
+                          />
+                          <p className="text-xs text-gray-500 mt-1">Enter your first and last name as it appears on your resume</p>
+                        </div>
                     
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -400,33 +518,61 @@ const EnhancedSignUp: React.FC = () => {
 
                   {form.role === 'jobseeker' && (
                     <div className="space-y-6">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Location <span className="text-red-500">*</span>
+                            Country <span className="text-red-500">*</span>
                           </label>
-                          <input 
-                            name="location" 
-                            value={form.location} 
-                            onChange={handleChange} 
-                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" 
-                            placeholder="City, State/Country"
-                            required 
-                          />
+                          <select
+                            name="country"
+                            value={form.country}
+                            onChange={handleChange}
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                            required
+                          >
+                            <option value="">Select Country</option>
+                            {countries.map(country => (
+                              <option key={country} value={country}>{country}</option>
+                            ))}
+                          </select>
                         </div>
                         
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Phone Number
+                            City <span className="text-red-500">*</span>
                           </label>
-                          <input 
-                            name="phone" 
-                            value={form.phone} 
-                            onChange={handleChange} 
-                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" 
-                            placeholder="Your phone number"
-                          />
+                          <select
+                            name="city"
+                            value={form.city}
+                            onChange={handleChange}
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                            required
+                            disabled={!form.country}
+                          >
+                            <option value="">Select City</option>
+                            {availableCities.map(city => (
+                              <option key={city} value={city}>{city}</option>
+                            ))}
+                          </select>
+                          {!form.country && (
+                            <p className="text-xs text-gray-500 mt-1">Please select a country first</p>
+                          )}
                         </div>
+                      </div>
+                        
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Phone Number <span className="text-red-500">*</span>
+                        </label>
+                        <input 
+                          name="phone" 
+                          value={form.phone} 
+                          onChange={handleChange} 
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all" 
+                          placeholder="+1 (555) 123-4567"
+                          required
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Include country code for international numbers</p>
                       </div>
 
                       <div>
@@ -444,9 +590,11 @@ const EnhancedSignUp: React.FC = () => {
 
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                          Upload Resume (PDF/DOC)
+                          Upload Resume (PDF/DOC) <span className="text-red-500">*</span>
                         </label>
-                        <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-400 transition-colors">
+                        <div className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
+                          form.resume ? 'border-green-400 bg-green-50' : 'border-gray-300 hover:border-blue-400'
+                        }`}>
                           <input 
                             type="file" 
                             name="resume" 
@@ -454,16 +602,20 @@ const EnhancedSignUp: React.FC = () => {
                             onChange={handleChange} 
                             className="hidden" 
                             id="resume-upload"
+                            required
                           />
                           <label htmlFor="resume-upload" className="cursor-pointer">
-                            <svg className="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                            <svg className={`mx-auto h-12 w-12 ${form.resume ? 'text-green-500' : 'text-gray-400'}`} stroke="currentColor" fill="none" viewBox="0 0 48 48">
                               <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
                             </svg>
                             <div className="mt-4">
-                              <span className="mt-2 block text-sm font-medium text-gray-900">
-                                {form.resume ? form.resume.name : 'Drop your resume here or click to upload'}
+                              <span className={`mt-2 block text-sm font-medium ${form.resume ? 'text-green-900' : 'text-gray-900'}`}>
+                                {form.resume ? `✓ ${form.resume.name}` : 'Drop your resume here or click to upload'}
                               </span>
-                              <span className="mt-1 block text-xs text-gray-500">PDF, DOC up to 10MB</span>
+                              <span className="mt-1 block text-xs text-gray-500">PDF, DOC, DOCX up to 5MB</span>
+                              {!form.resume && (
+                                <span className="mt-1 block text-xs text-red-500">Resume is required for job seekers</span>
+                              )}
                             </div>
                           </label>
                         </div>

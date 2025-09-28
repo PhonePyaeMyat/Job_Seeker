@@ -40,6 +40,7 @@ const Header: React.FC = () => {
           )}
           
           {user && <Link to="/profile" className="hover:underline">Profile</Link>}
+          {user && role === 'jobseeker' && <Link to="/dashboard" className="hover:underline">Dashboard</Link>}
           {user && (
             <button
               onClick={handleLogout}

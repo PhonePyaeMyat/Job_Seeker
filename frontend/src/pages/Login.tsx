@@ -20,7 +20,7 @@ const Login: React.FC = () => {
   // Redirect if already logged in
   useEffect(() => {
     if (user && !userLoading) {
-      navigate('/dashboard');
+      navigate('/');
     }
   }, [user, userLoading, navigate]);
 
