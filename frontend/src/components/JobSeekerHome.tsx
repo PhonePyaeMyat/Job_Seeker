@@ -219,8 +219,32 @@ const JobSeekerHome: React.FC = () => {
         setSavedJobIds(savedIds);
 
         if (savedIds.length > 0) {
-          // Get the actual job data for saved jobs
-          const savedJobsData = jobs.filter(job => savedIds.includes(job.id));
+          // Get the actual job data for saved jobs from Firestore
+          const savedJobsData = [];
+          for (const jobId of savedIds) {
+            try {
+              const jobDoc = await getDoc(doc(db, 'jobs', jobId));
+              if (jobDoc.exists()) {
+                const jobData = jobDoc.data();
+                savedJobsData.push({
+                  id: jobDoc.id,
+                  title: jobData.title || 'Untitled Job',
+                  company: jobData.company || 'Unknown Company',
+                  location: jobData.location || 'Location TBD',
+                  type: jobData.type || 'FULL_TIME',
+                  salary: jobData.salary || 'Salary TBD',
+                  postedDate: jobData.postedDate || new Date().toISOString(),
+                  description: jobData.description || 'No description available',
+                  active: jobData.active !== false,
+                  applicants: jobData.applicants || [],
+                  status: jobData.status || 'approved',
+                  featured: jobData.featured || false
+                } as Job);
+              }
+            } catch (jobErr) {
+              console.warn(`Failed to load saved job ${jobId}:`, jobErr);
+            }
+          }
           setSavedJobs(savedJobsData);
         } else {
           setSavedJobs([]);
@@ -246,7 +270,7 @@ const JobSeekerHome: React.FC = () => {
       setStats({
         totalJobs: jobs.length,
         appliedJobs: userApplications,
-        savedJobs: savedJobs.length,
+        savedJobs: savedJobIds.length, // Use savedJobIds length for accurate count
         profileViews: 0 // Would be calculated from profile views
       });
     } catch (err) {
@@ -255,7 +279,7 @@ const JobSeekerHome: React.FC = () => {
       setStats({
         totalJobs: jobs.length,
         appliedJobs: 0,
-        savedJobs: 0,
+        savedJobs: savedJobIds.length,
         profileViews: 0
       });
     }
@@ -268,12 +292,19 @@ const JobSeekerHome: React.FC = () => {
     }
   }, [jobs, user]);
 
-  // Reload saved jobs when user changes or jobs are loaded
+  // Recalculate stats when saved jobs change
   useEffect(() => {
-    if (user && jobs.length > 0) {
+    if (jobs.length > 0) {
+      loadStats();
+    }
+  }, [savedJobIds]);
+
+  // Reload saved jobs when user changes
+  useEffect(() => {
+    if (user) {
       loadSavedJobs();
     }
-  }, [user, jobs]);
+  }, [user]);
 
   const handleSearch = (filters: { keyword: string; location: string; type: string }) => {
     setSearchFilters(filters);
@@ -306,8 +337,45 @@ const JobSeekerHome: React.FC = () => {
   };
 
   const handleApply = async (jobId: string) => {
-    console.log('Applying for job:', jobId);
-    // TODO: Implement job application logic or redirect to job details
+    if (!user) {
+      alert('Please log in to apply for jobs');
+      return;
+    }
+
+    try {
+      // Use the service function to apply to the job
+      const { applyToJob } = await import('../services/jobService');
+      await applyToJob(jobId, user.uid);
+      
+      // Update the job in the current state to reflect the application
+      setJobs(prev => prev.map(job => 
+        job.id === jobId 
+          ? { ...job, applicants: [...job.applicants, user.uid] }
+          : job
+      ));
+      
+      // Update featured jobs if applicable
+      setFeaturedJobs(prev => prev.map(job => 
+        job.id === jobId 
+          ? { ...job, applicants: [...job.applicants, user.uid] }
+          : job
+      ));
+      
+      // Update recent jobs if applicable
+      setRecentJobs(prev => prev.map(job => 
+        job.id === jobId 
+          ? { ...job, applicants: [...job.applicants, user.uid] }
+          : job
+      ));
+      
+      // Refresh stats to show updated applied jobs count
+      loadStats();
+      
+      alert('Application submitted successfully!');
+    } catch (error) {
+      console.error('Error applying to job:', error);
+      alert('Failed to apply to job. Please try again.');
+    }
   };
 
   const getDisplayJobs = () => {
@@ -323,18 +391,56 @@ const JobSeekerHome: React.FC = () => {
     }
   };
 
-  const handleSaveChange = (jobId: string, isSaved: boolean) => {
+  const handleSaveChange = async (jobId: string, isSaved: boolean) => {
     if (isSaved) {
       setSavedJobIds(prev => [...prev, jobId]);
-      // Add job to saved jobs if it exists in the current jobs list
-      const job = jobs.find(j => j.id === jobId);
-      if (job) {
-        setSavedJobs(prev => [...prev, job]);
+      // Find job in any of the job lists and add to saved jobs
+      let jobToAdd = jobs.find(j => j.id === jobId) || 
+                    featuredJobs.find(j => j.id === jobId) || 
+                    recentJobs.find(j => j.id === jobId);
+      
+      // If not found in current lists, fetch from Firestore
+      if (!jobToAdd) {
+        try {
+          const jobDoc = await getDoc(doc(db, 'jobs', jobId));
+          if (jobDoc.exists()) {
+            const jobData = jobDoc.data();
+            jobToAdd = {
+              id: jobDoc.id,
+              title: jobData.title || 'Untitled Job',
+              company: jobData.company || 'Unknown Company',
+              location: jobData.location || 'Location TBD',
+              type: jobData.type || 'FULL_TIME',
+              salary: jobData.salary || 'Salary TBD',
+              postedDate: jobData.postedDate || new Date().toISOString(),
+              description: jobData.description || 'No description available',
+              active: jobData.active !== false,
+              applicants: jobData.applicants || [],
+              status: jobData.status || 'approved',
+              featured: jobData.featured || false
+            } as Job;
+          }
+        } catch (error) {
+          console.error('Error fetching job details:', error);
+        }
+      }
+      
+      if (jobToAdd) {
+        setSavedJobs(prev => {
+          // Check if already in saved jobs to avoid duplicates
+          const exists = prev.some(job => job.id === jobId);
+          return exists ? prev : [...prev, jobToAdd];
+        });
       }
     } else {
       setSavedJobIds(prev => prev.filter(id => id !== jobId));
       setSavedJobs(prev => prev.filter(job => job.id !== jobId));
     }
+    
+    // Update stats to reflect the change
+    setTimeout(() => {
+      loadStats();
+    }, 100);
   };
 
   if (userLoading || loading) {
