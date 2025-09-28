@@ -128,7 +128,11 @@ const LandingPage: React.FC = () => {
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
               {featuredJobs.map(job => (
                 <div key={job.id} className="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow">
-                  <JobCard job={job} onApply={handleApply} />
+                  <JobCard 
+                    job={job} 
+                    onApply={handleApply}
+                    isApplied={user ? job.applicants?.includes(user.uid) : false}
+                  />
                 </div>
               ))}
             </div>

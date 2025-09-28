@@ -599,6 +599,7 @@ const JobSeekerHome: React.FC = () => {
                     job={job}
                     onApply={handleApply}
                     isSaved={savedJobIds.includes(job.id)}
+                    isApplied={user ? job.applicants?.includes(user.uid) : false}
                     onSaveChange={handleSaveChange}
                   />
                 </div>

@@ -4,6 +4,8 @@ import JobCard from './JobCard';
 import BackendStatus from './BackendStatus';
 import { searchJobs, Job, getJobs, applyToJob } from '../services/jobService';
 import { Link, useNavigate } from 'react-router-dom';
+import { useAuthState } from 'react-firebase-hooks/auth';
+import { auth } from '../firebaseConfig';
 
 const JobList = () => {
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -15,6 +17,7 @@ const JobList = () => {
   const [filters, setFilters] = useState<{ keyword: string; location: string; type: string } | null>(null);
   const size = 10;
   const navigate = useNavigate();
+  const [user] = useAuthState(auth);
 
   const fetchJobs = async (pageNum = 0, filtersArg = filters) => {
     try {
@@ -125,6 +128,7 @@ const JobList = () => {
               <JobCard
                 job={job}
                 onApply={handleApply}
+                isApplied={user ? job.applicants?.includes(user.uid) : false}
               />
             </Link>
           ))

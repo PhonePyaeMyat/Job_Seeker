@@ -11,13 +11,15 @@ interface JobCardProps {
     salary: string;
     postedDate: string;
     description: string;
+    applicants?: string[];
   };
   onApply: (jobId: string) => void;
   isSaved?: boolean;
+  isApplied?: boolean;
   onSaveChange?: (jobId: string, isSaved: boolean) => void;
 }
 
-const JobCard = ({ job, onApply, isSaved = false, onSaveChange }: JobCardProps) => {
+const JobCard = ({ job, onApply, isSaved = false, isApplied = false, onSaveChange }: JobCardProps) => {
   return (
     <div className="bg-white rounded-lg shadow-md p-6 mb-4 hover:shadow-lg transition-shadow">
       <div className="flex justify-between items-start">
@@ -25,9 +27,19 @@ const JobCard = ({ job, onApply, isSaved = false, onSaveChange }: JobCardProps) 
           <h2 className="text-xl font-semibold text-gray-800">{job.title}</h2>
           <p className="text-gray-600 mt-1">{job.company}</p>
         </div>
-        <span className="bg-blue-100 text-blue-800 text-sm font-medium px-3 py-1 rounded">
-          {job.type}
-        </span>
+        <div className="flex flex-col items-end gap-2">
+          <span className="bg-blue-100 text-blue-800 text-sm font-medium px-3 py-1 rounded">
+            {job.type}
+          </span>
+          {isApplied && (
+            <span className="bg-green-100 text-green-800 text-sm font-medium px-3 py-1 rounded flex items-center gap-1">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              Applied
+            </span>
+          )}
+        </div>
       </div>
       
       <div className="mt-4">
@@ -60,9 +72,14 @@ const JobCard = ({ job, onApply, isSaved = false, onSaveChange }: JobCardProps) 
           />
           <button
             onClick={() => onApply(job.id)}
-            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
+            disabled={isApplied}
+            className={`px-4 py-2 rounded transition-colors ${
+              isApplied
+                ? 'bg-green-100 text-green-800 cursor-not-allowed'
+                : 'bg-blue-600 text-white hover:bg-blue-700'
+            }`}
           >
-            Apply Now
+            {isApplied ? '✓ Applied' : 'Apply Now'}
           </button>
         </div>
       </div>

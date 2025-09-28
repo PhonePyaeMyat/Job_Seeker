@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { auth } from '../firebaseConfig';
 import { getJobById, applyToJob } from '../services/jobService';
+import ApplicationModal from './ApplicationModal';
 
 interface Job {
   id: string;
@@ -29,6 +30,7 @@ const JobDetails: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [applying, setApplying] = useState(false);
   const [applyMsg, setApplyMsg] = useState('');
+  const [showApplicationModal, setShowApplicationModal] = useState(false);
   const [user, userLoading] = useAuthState(auth);
   const navigate = useNavigate();
 
@@ -53,7 +55,7 @@ const JobDetails: React.FC = () => {
     load();
   }, [id]);
 
-  const handleApply = async () => {
+  const handleApply = () => {
     if (!user) {
       navigate('/login');
       return;
@@ -64,28 +66,18 @@ const JobDetails: React.FC = () => {
       return;
     }
 
-    try {
-      setApplying(true);
-      const userId = user.uid;
-      if (!id) throw new Error('Missing job id');
-      
-      await applyToJob(id, userId);
-      
-      // Update local job state to reflect the application
-      if (job) {
-        setJob({
-          ...job,
-          applicants: [...(job.applicants || []), userId]
-        });
-      }
-      
-      setApplyMsg('You have successfully applied for this job! 🎉');
-    } catch (err: any) {
-      console.error('Application error:', err);
-      setApplyMsg('Failed to apply. Please try again.');
-    } finally {
-      setApplying(false);
+    setShowApplicationModal(true);
+  };
+
+  const handleApplicationSubmitted = () => {
+    // Update local job state to reflect the application
+    if (job && user) {
+      setJob({
+        ...job,
+        applicants: [...(job.applicants || []), user.uid]
+      });
     }
+    setApplyMsg('You have successfully applied for this job! 🎉');
   };
 
   if (loading) {
@@ -286,6 +278,21 @@ const JobDetails: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Application Modal */}
+      {job && (
+        <ApplicationModal
+          isOpen={showApplicationModal}
+          onClose={() => setShowApplicationModal(false)}
+          job={{
+            id: job.id,
+            title: job.title,
+            company: job.company,
+            companyId: job.companyId
+          }}
+          onApplicationSubmitted={handleApplicationSubmitted}
+        />
+      )}
     </div>
   );
 };

@@ -22,6 +22,8 @@ import About from './pages/About';
 import Contact from './pages/Contact';
 import Terms from './pages/Terms';
 import Privacy from './pages/Privacy';
+import CompanyProfile from './components/CompanyProfile';
+import IndeedStyleLanding from './components/IndeedStyleLanding';
 
 function App() {
   const [user, loading] = useAuthState(auth);
@@ -41,7 +43,7 @@ function App() {
       <main>
         
           <Routes>
-            <Route path="/" element={user ? (role === 'admin' ? <AdminPanel /> : role === 'employer' ? <EmployerHome /> : role === 'jobseeker' ? <JobSeekerHome /> : <JobList />) : <LandingPage />} />
+            <Route path="/" element={user ? (role === 'admin' ? <AdminPanel /> : role === 'employer' ? <EmployerHome /> : role === 'jobseeker' ? <JobSeekerHome /> : <JobList />) : <IndeedStyleLanding />} />
             <Route path="/jobs" element={<JobList />} />
             <Route path="/jobs/:id" element={<JobDetails />} />
             <Route path="/post-job" element={<JobForm />} />
@@ -61,6 +63,7 @@ function App() {
             <Route path="/contact" element={<Contact />} />
             <Route path="/terms" element={<Terms />} />
             <Route path="/privacy" element={<Privacy />} />
+            <Route path="/companies/:id" element={<CompanyProfile />} />
             <Route path="/500" element={<ServerError />} />
             <Route path="*" element={<NotFound />} />
           </Routes> 
