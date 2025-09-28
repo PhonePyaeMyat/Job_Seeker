@@ -4,7 +4,7 @@ import { auth, db } from '../firebaseConfig';
 import { doc, setDoc } from 'firebase/firestore';
 import { useNavigate, Link } from 'react-router-dom';
 
-interface SignUpForm {
+interface BaseForm {
   role: 'jobseeker' | 'employer' | 'admin';
   fullName: string;
   email: string;
@@ -13,6 +13,29 @@ interface SignUpForm {
   agree: boolean;
 }
 
+interface JobSeekerForm extends BaseForm {
+  role: 'jobseeker';
+  phone: string;
+  location: string;
+  experience: string;
+  skills: string;
+}
+
+interface EmployerForm extends BaseForm {
+  role: 'employer';
+  companyName: string;
+  companyWebsite: string;
+  companySize: string;
+  industry: string;
+}
+
+interface AdminForm extends BaseForm {
+  role: 'admin';
+  adminCode: string;
+}
+
+type SignUpForm = JobSeekerForm | EmployerForm | AdminForm;
+
 const SignUp: React.FC = () => {
   const [form, setForm] = useState<SignUpForm>({
     role: 'jobseeker',
@@ -20,12 +43,18 @@ const SignUp: React.FC = () => {
     email: '',
     password: '',
     confirmPassword: '',
-    agree: false
-  });
+    agree: false,
+    phone: '',
+    location: '',
+    experience: '',
+    skills: ''
+  } as SignUpForm);
+  
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [success, setSuccess] = useState(false);
   const navigate = useNavigate();
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -34,10 +63,11 @@ const SignUp: React.FC = () => {
       ...prev,
       [name]: type === 'checkbox' ? checked : value
     }));
-    setError(null); // Clear error when user starts typing
+    setError(null);
   };
 
   const validateForm = () => {
+    // Basic validation
     if (!form.fullName.trim()) {
       setError('Please enter your full name');
       return false;
@@ -62,6 +92,41 @@ const SignUp: React.FC = () => {
       setError('Please agree to the Terms of Service and Privacy Policy');
       return false;
     }
+
+    // Role-specific validation
+    if (form.role === 'jobseeker') {
+      if (!form.phone.trim()) {
+        setError('Please enter your phone number');
+        return false;
+      }
+      if (!form.location.trim()) {
+        setError('Please enter your location');
+        return false;
+      }
+    }
+
+    if (form.role === 'employer') {
+      if (!form.companyName.trim()) {
+        setError('Please enter your company name');
+        return false;
+      }
+      if (!form.industry.trim()) {
+        setError('Please select your industry');
+        return false;
+      }
+    }
+
+    if (form.role === 'admin') {
+      if (!form.adminCode.trim()) {
+        setError('Please enter the admin access code');
+        return false;
+      }
+      if (form.adminCode !== 'ADMIN2024') {
+        setError('Invalid admin access code');
+        return false;
+      }
+    }
+
     return true;
   };
 
@@ -77,11 +142,10 @@ const SignUp: React.FC = () => {
       const userCredential = await createUserWithEmailAndPassword(auth, form.email, form.password);
       const user = userCredential.user;
 
-      // Update Firebase Auth profile
       await updateProfile(user, { displayName: form.fullName });
 
-      // Create user document in Firestore
-      const userData = {
+      // Create user document with role-specific data
+      const userData: any = {
         displayName: form.fullName,
         email: form.email,
         role: form.role,
@@ -89,11 +153,29 @@ const SignUp: React.FC = () => {
         updatedAt: new Date().toISOString()
       };
 
+      // Add role-specific fields
+      if (form.role === 'jobseeker') {
+        userData.phone = form.phone;
+        userData.location = form.location;
+        userData.experience = form.experience;
+        userData.skills = form.skills.split(',').map(s => s.trim()).filter(Boolean);
+        userData.savedJobs = [];
+      }
+
+      if (form.role === 'employer') {
+        userData.companyName = form.companyName;
+        userData.companyWebsite = form.companyWebsite;
+        userData.companySize = form.companySize;
+        userData.industry = form.industry;
+      }
+
       await setDoc(doc(db, 'users', user.uid), userData);
       localStorage.setItem('role', form.role);
       
-      // Redirect based on role
-      navigate('/');
+      setSuccess(true);
+      setTimeout(() => {
+        navigate('/dashboard');
+      }, 1500);
     } catch (err: any) {
       console.error('Signup error:', err);
       let errorMessage = 'An error occurred during signup. Please try again.';
@@ -127,22 +209,37 @@ const SignUp: React.FC = () => {
       const result = await signInWithPopup(auth, provider);
       const user = result.user;
 
-      // Set role based on form selection
-      const userRole = form.role;
-
-      // Create user document in Firestore
-      const userData = {
+      const userData: any = {
         displayName: user.displayName || user.email?.split('@')[0] || 'User',
         email: user.email || '',
-        role: userRole,
+        role: form.role,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
 
+      // Add role-specific fields for Google signup
+      if (form.role === 'jobseeker') {
+        userData.phone = form.phone || '';
+        userData.location = form.location || '';
+        userData.experience = form.experience || '';
+        userData.skills = form.skills ? form.skills.split(',').map(s => s.trim()).filter(Boolean) : [];
+        userData.savedJobs = [];
+      }
+
+      if (form.role === 'employer') {
+        userData.companyName = form.companyName || '';
+        userData.companyWebsite = form.companyWebsite || '';
+        userData.companySize = form.companySize || '';
+        userData.industry = form.industry || '';
+      }
+
       await setDoc(doc(db, 'users', user.uid), userData);
-      localStorage.setItem('role', userRole);
+      localStorage.setItem('role', form.role);
       
-      navigate('/');
+      setSuccess(true);
+      setTimeout(() => {
+        navigate('/dashboard');
+      }, 1500);
     } catch (err: any) {
       console.error('Google signup error:', err);
       let errorMessage = 'Google signup failed. Please try again.';
@@ -172,13 +269,186 @@ const SignUp: React.FC = () => {
   const strengthColors = ['bg-red-500', 'bg-orange-500', 'bg-yellow-500', 'bg-green-500'];
   const strengthLabels = ['Very Weak', 'Weak', 'Good', 'Strong'];
 
+  const renderRoleSpecificFields = () => {
+    if (form.role === 'jobseeker') {
+      return (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Phone Number
+              </label>
+              <input
+                type="tel"
+                name="phone"
+                value={form.phone}
+                onChange={handleChange}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                placeholder="+1 (555) 123-4567"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Location
+              </label>
+              <input
+                type="text"
+                name="location"
+                value={form.location}
+                onChange={handleChange}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                placeholder="City, State, Country"
+                required
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Experience Level
+            </label>
+            <select
+              name="experience"
+              value={form.experience}
+              onChange={handleChange}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+            >
+              <option value="">Select your experience level</option>
+              <option value="entry">Entry Level (0-2 years)</option>
+              <option value="mid">Mid Level (3-5 years)</option>
+              <option value="senior">Senior Level (6-10 years)</option>
+              <option value="executive">Executive (10+ years)</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Skills (comma-separated)
+            </label>
+            <input
+              type="text"
+              name="skills"
+              value={form.skills}
+              onChange={handleChange}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+              placeholder="React, JavaScript, Python, etc."
+            />
+            <p className="text-xs text-gray-500 mt-1">Separate multiple skills with commas</p>
+          </div>
+        </>
+      );
+    }
+
+    if (form.role === 'employer') {
+      return (
+        <>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Company Name
+            </label>
+            <input
+              type="text"
+              name="companyName"
+              value={form.companyName}
+              onChange={handleChange}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+              placeholder="Your company name"
+              required
+            />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Company Website
+              </label>
+              <input
+                type="url"
+                name="companyWebsite"
+                value={form.companyWebsite}
+                onChange={handleChange}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                placeholder="https://yourcompany.com"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Company Size
+              </label>
+              <select
+                name="companySize"
+                value={form.companySize}
+                onChange={handleChange}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+              >
+                <option value="">Select company size</option>
+                <option value="1-10">1-10 employees</option>
+                <option value="11-50">11-50 employees</option>
+                <option value="51-200">51-200 employees</option>
+                <option value="201-500">201-500 employees</option>
+                <option value="500+">500+ employees</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Industry
+            </label>
+            <select
+              name="industry"
+              value={form.industry}
+              onChange={handleChange}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+              required
+            >
+              <option value="">Select your industry</option>
+              <option value="technology">Technology</option>
+              <option value="finance">Finance</option>
+              <option value="healthcare">Healthcare</option>
+              <option value="education">Education</option>
+              <option value="retail">Retail</option>
+              <option value="manufacturing">Manufacturing</option>
+              <option value="consulting">Consulting</option>
+              <option value="nonprofit">Non-profit</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+        </>
+      );
+    }
+
+    if (form.role === 'admin') {
+      return (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Admin Access Code
+          </label>
+          <input
+            type="password"
+            name="adminCode"
+            value={form.adminCode}
+            onChange={handleChange}
+            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+            placeholder="Enter admin access code"
+            required
+          />
+          <p className="text-xs text-gray-500 mt-1">Contact system administrator for access code</p>
+        </div>
+      );
+    }
+
+    return null;
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
+      <div className="max-w-2xl w-full space-y-8">
         {/* Header */}
         <div className="text-center">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Create Your Account</h1>
-          <p className="text-gray-600">Join thousands of professionals finding their next opportunity</p>
+          <p className="text-gray-600">
+            {form.role === 'jobseeker' && 'Join thousands of professionals finding their next opportunity'}
+            {form.role === 'employer' && 'Connect with top talent and grow your team'}
+            {form.role === 'admin' && 'Access system administration and management tools'}
+          </p>
         </div>
 
         {/* Main Form */}
@@ -191,7 +461,7 @@ const SignUp: React.FC = () => {
             <div className="grid grid-cols-3 gap-3">
               <button
                 type="button"
-                onClick={() => setForm(prev => ({ ...prev, role: 'jobseeker' }))}
+                onClick={() => setForm(prev => ({ ...prev, role: 'jobseeker', phone: '', location: '', experience: '', skills: '' } as JobSeekerForm))}
                 className={`p-4 rounded-lg border-2 transition-all ${
                   form.role === 'jobseeker'
                     ? 'border-blue-500 bg-blue-50 text-blue-700'
@@ -209,7 +479,7 @@ const SignUp: React.FC = () => {
               
               <button
                 type="button"
-                onClick={() => setForm(prev => ({ ...prev, role: 'employer' }))}
+                onClick={() => setForm(prev => ({ ...prev, role: 'employer', companyName: '', companyWebsite: '', companySize: '', industry: '' } as EmployerForm))}
                 className={`p-4 rounded-lg border-2 transition-all ${
                   form.role === 'employer'
                     ? 'border-blue-500 bg-blue-50 text-blue-700'
@@ -227,7 +497,7 @@ const SignUp: React.FC = () => {
 
               <button
                 type="button"
-                onClick={() => setForm(prev => ({ ...prev, role: 'admin' }))}
+                onClick={() => setForm(prev => ({ ...prev, role: 'admin', adminCode: '' } as AdminForm))}
                 className={`p-4 rounded-lg border-2 transition-all ${
                   form.role === 'admin'
                     ? 'border-red-500 bg-red-50 text-red-700'
@@ -246,132 +516,135 @@ const SignUp: React.FC = () => {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Full Name */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Full Name
-              </label>
-              <input
-                type="text"
-                name="fullName"
-                value={form.fullName}
-                onChange={handleChange}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                placeholder="Enter your full name"
-                required
-              />
-            </div>
-
-            {/* Email */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Email Address
-              </label>
-              <input
-                type="email"
-                name="email"
-                value={form.email}
-                onChange={handleChange}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                placeholder="Enter your email"
-                required
-              />
-            </div>
-
-            {/* Password */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Password
-              </label>
-              <div className="relative">
+            {/* Basic Information */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Full Name
+                </label>
                 <input
-                  type={showPassword ? 'text' : 'password'}
-                  name="password"
-                  value={form.password}
+                  type="text"
+                  name="fullName"
+                  value={form.fullName}
                   onChange={handleChange}
-                  className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                  placeholder="Create a password"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                  placeholder="Enter your full name"
                   required
-                  minLength={6}
                 />
-                <button
-                  type="button"
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                  onClick={() => setShowPassword(!showPassword)}
-                >
-                  {showPassword ? (
-                    <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21" />
-                    </svg>
-                  ) : (
-                    <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                    </svg>
-                  )}
-                </button>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Email Address
+                </label>
+                <input
+                  type="email"
+                  name="email"
+                  value={form.email}
+                  onChange={handleChange}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                  placeholder="Enter your email"
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Role-Specific Fields */}
+            {renderRoleSpecificFields()}
+
+            {/* Password Fields */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    name="password"
+                    value={form.password}
+                    onChange={handleChange}
+                    className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    placeholder="Create a password"
+                    required
+                    minLength={6}
+                  />
+                  <button
+                    type="button"
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                    onClick={() => setShowPassword(!showPassword)}
+                  >
+                    {showPassword ? (
+                      <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21" />
+                      </svg>
+                    ) : (
+                      <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
+                
+                {form.password && (
+                  <div className="mt-2">
+                    <div className="flex items-center space-x-1">
+                      {[1, 2, 3, 4].map((level) => (
+                        <div
+                          key={level}
+                          className={`h-1 flex-1 rounded-full ${
+                            passwordStrength >= level ? strengthColors[passwordStrength - 1] : 'bg-gray-200'
+                          }`}
+                        />
+                      ))}
+                    </div>
+                    <p className={`text-xs mt-1 ${passwordStrength >= 2 ? 'text-green-600' : 'text-gray-500'}`}>
+                      {passwordStrength > 0 ? strengthLabels[passwordStrength - 1] : ''}
+                    </p>
+                  </div>
+                )}
               </div>
               
-              {/* Password Strength */}
-              {form.password && (
-                <div className="mt-2">
-                  <div className="flex items-center space-x-1">
-                    {[1, 2, 3, 4].map((level) => (
-                      <div
-                        key={level}
-                        className={`h-1 flex-1 rounded-full ${
-                          passwordStrength >= level ? strengthColors[passwordStrength - 1] : 'bg-gray-200'
-                        }`}
-                      />
-                    ))}
-                  </div>
-                  <p className={`text-xs mt-1 ${passwordStrength >= 2 ? 'text-green-600' : 'text-gray-500'}`}>
-                    {passwordStrength > 0 ? strengthLabels[passwordStrength - 1] : ''}
-                  </p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Confirm Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    name="confirmPassword"
+                    value={form.confirmPassword}
+                    onChange={handleChange}
+                    className={`w-full px-4 py-3 pr-12 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all ${
+                      form.confirmPassword && form.password !== form.confirmPassword
+                        ? 'border-red-300 bg-red-50'
+                        : 'border-gray-300'
+                    }`}
+                    placeholder="Confirm your password"
+                    required
+                    minLength={6}
+                  />
+                  <button
+                    type="button"
+                    className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  >
+                    {showConfirmPassword ? (
+                      <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21" />
+                      </svg>
+                    ) : (
+                      <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                    )}
+                  </button>
                 </div>
-              )}
-            </div>
-
-            {/* Confirm Password */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Confirm Password
-              </label>
-              <div className="relative">
-                <input
-                  type={showConfirmPassword ? 'text' : 'password'}
-                  name="confirmPassword"
-                  value={form.confirmPassword}
-                  onChange={handleChange}
-                  className={`w-full px-4 py-3 pr-12 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all ${
-                    form.confirmPassword && form.password !== form.confirmPassword
-                      ? 'border-red-300 bg-red-50'
-                      : 'border-gray-300'
-                  }`}
-                  placeholder="Confirm your password"
-                  required
-                  minLength={6}
-                />
-                <button
-                  type="button"
-                  className="absolute inset-y-0 right-0 pr-3 flex items-center"
-                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                >
-                  {showConfirmPassword ? (
-                    <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21" />
-                    </svg>
-                  ) : (
-                    <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                    </svg>
-                  )}
-                </button>
+                {form.confirmPassword && form.password !== form.confirmPassword && (
+                  <p className="text-xs text-red-500 mt-1">Passwords don't match</p>
+                )}
               </div>
-              {form.confirmPassword && form.password !== form.confirmPassword && (
-                <p className="text-xs text-red-500 mt-1">Passwords don't match</p>
-              )}
             </div>
 
             {/* Terms and Conditions */}
@@ -396,6 +669,18 @@ const SignUp: React.FC = () => {
               </label>
             </div>
 
+            {/* Success Message */}
+            {success && (
+              <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg text-sm">
+                <div className="flex items-center">
+                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  Account created successfully! Redirecting to your dashboard...
+                </div>
+              </div>
+            )}
+
             {/* Error Message */}
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
@@ -406,9 +691,9 @@ const SignUp: React.FC = () => {
             {/* Submit Button */}
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || success}
               className={`w-full py-3 px-4 rounded-lg font-medium transition-colors ${
-                loading
+                loading || success
                   ? 'bg-gray-400 cursor-not-allowed'
                   : 'bg-blue-600 hover:bg-blue-700'
               } text-white`}
@@ -417,6 +702,13 @@ const SignUp: React.FC = () => {
                 <span className="flex items-center justify-center">
                   <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
                   Creating Account...
+                </span>
+              ) : success ? (
+                <span className="flex items-center justify-center">
+                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  Account Created!
                 </span>
               ) : (
                 'Create Account'
