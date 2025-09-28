@@ -14,6 +14,7 @@ import {
 import { Link } from 'react-router-dom';
 import JobSearch from './JobSearch';
 import JobCard from './JobCard';
+import { applyToJob } from '../services/jobService';
 
 interface Job {
   id: string;
@@ -261,12 +262,12 @@ const JobSeekerHome: React.FC = () => {
     }
   };
 
-  // Recalculate stats when jobs change
+  // Recalculate stats when jobs or saved jobs change
   useEffect(() => {
     if (jobs.length > 0) {
       loadStats();
     }
-  }, [jobs, user]);
+  }, [jobs, savedJobs, user]);
 
   // Reload saved jobs when user changes or jobs are loaded
   useEffect(() => {
@@ -306,8 +307,41 @@ const JobSeekerHome: React.FC = () => {
   };
 
   const handleApply = async (jobId: string) => {
-    console.log('Applying for job:', jobId);
-    // TODO: Implement job application logic or redirect to job details
+    try {
+      if (!user) {
+        alert('Please log in to apply for jobs');
+        return;
+      }
+
+      await applyToJob(jobId, user.uid);
+
+      // Optimistically update local state so UI reflects the application
+      setJobs((prevJobs: Job[]) => prevJobs.map((job: Job) => {
+        if (job.id !== jobId) return job;
+        const applicants = Array.isArray(job.applicants) ? job.applicants : [];
+        if (applicants.includes(user.uid)) return job;
+        return { ...job, applicants: [...applicants, user.uid] } as Job;
+      }));
+
+      setRecentJobs((prev: Job[]) => prev.map((job: Job) => {
+        if (job.id !== jobId) return job;
+        const applicants = Array.isArray(job.applicants) ? job.applicants : [];
+        if (applicants.includes(user.uid)) return job;
+        return { ...job, applicants: [...applicants, user.uid] } as Job;
+      }));
+      setFeaturedJobs((prev: Job[]) => prev.map((job: Job) => {
+        if (job.id !== jobId) return job;
+        const applicants = Array.isArray(job.applicants) ? job.applicants : [];
+        if (applicants.includes(user.uid)) return job;
+        return { ...job, applicants: [...applicants, user.uid] } as Job;
+      }));
+
+      await loadStats();
+      alert('Application submitted');
+    } catch (err: any) {
+      console.error('Failed to apply to job:', err);
+      alert(`Failed to apply: ${err.message || 'Unknown error'}`);
+    }
   };
 
   const getDisplayJobs = () => {
@@ -325,15 +359,15 @@ const JobSeekerHome: React.FC = () => {
 
   const handleSaveChange = (jobId: string, isSaved: boolean) => {
     if (isSaved) {
-      setSavedJobIds(prev => [...prev, jobId]);
+      setSavedJobIds((prev: string[]) => [...prev, jobId]);
       // Add job to saved jobs if it exists in the current jobs list
       const job = jobs.find(j => j.id === jobId);
       if (job) {
-        setSavedJobs(prev => [...prev, job]);
+        setSavedJobs((prev: Job[]) => [...prev, job]);
       }
     } else {
-      setSavedJobIds(prev => prev.filter(id => id !== jobId));
-      setSavedJobs(prev => prev.filter(job => job.id !== jobId));
+      setSavedJobIds((prev: string[]) => prev.filter((id: string) => id !== jobId));
+      setSavedJobs((prev: Job[]) => prev.filter((job: Job) => job.id !== jobId));
     }
   };
 
