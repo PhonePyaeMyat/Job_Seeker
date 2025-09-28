@@ -37,7 +37,6 @@ function App() {
             <Route path="/post-job" element={<JobForm />} />
             <Route path="/signup" element={<SignUp />} />
             <Route path="/login" element={<Login />} />
-            <Route path="/dashboard" element={user ? (role === 'admin' ? <AdminPanel /> : role === 'employer' ? <EmployerDashboard /> : <JobSeekerDashboard />) : <Navigate to="/login" />} />
             <Route path="/profile" element={user ? <Profile /> : <Navigate to="/login" />} />
             <Route path="/admin" element={user && (user.email === 'admin@jobseeker.com' || user.displayName === 'admin') ? <AdminPanel /> : <Navigate to="/login" />} />
             <Route path="/500" element={<ServerError />} />

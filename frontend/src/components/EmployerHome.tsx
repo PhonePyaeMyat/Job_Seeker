@@ -175,10 +175,10 @@ const EmployerHome: React.FC = () => {
                 Post New Job
               </Link>
               <Link
-                to="/dashboard"
+                to="/profile"
                 className="border-2 border-white text-white px-6 py-3 rounded-lg font-semibold hover:bg-white hover:text-blue-600 transition-colors"
               >
-                View Dashboard
+                Update Profile
               </Link>
             </div>
           </div>
@@ -265,10 +265,10 @@ const EmployerHome: React.FC = () => {
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-gray-900">Recent Job Postings</h3>
             <Link
-              to="/dashboard"
+              to="/post-job"
               className="text-blue-600 hover:text-blue-800 text-sm font-medium"
             >
-              View All
+              Post New Job
             </Link>
           </div>
           <div className="space-y-3">
@@ -317,10 +317,10 @@ const EmployerHome: React.FC = () => {
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-gray-900">Recent Applications</h3>
             <Link
-              to="/dashboard"
+              to="/profile"
               className="text-blue-600 hover:text-blue-800 text-sm font-medium"
             >
-              View All
+              Manage Profile
             </Link>
           </div>
           <div className="space-y-3">
