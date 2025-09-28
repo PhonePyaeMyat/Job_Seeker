@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import JobSearch from './JobSearch';
 import JobCard from './JobCard';
 import BackendStatus from './BackendStatus';
-import { searchJobs, Job, getJobs } from '../services/jobService';
+import { searchJobs, Job, getJobs, applyToJob } from '../services/jobService';
 import { Link } from 'react-router-dom';
 
 const JobList = () => {
@@ -66,8 +66,13 @@ const JobList = () => {
   };
 
   const handleApply = async (jobId: string) => {
-    // TODO: Implement job application logic
-    console.log('Applying for job:', jobId);
+    try {
+      // In this list, we don't have user context; just navigate to details
+      // or call backend apply if needed. Keeping console for now.
+      console.log('Applying for job:', jobId);
+    } catch (err) {
+      console.error('Failed to apply:', err);
+    }
   };
 
   const totalPages = Math.ceil(total / size);
