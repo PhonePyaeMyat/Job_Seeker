@@ -118,23 +118,62 @@ const JobSeekerDashboard: React.FC = () => {
     }
   };
 
-  const handleSaveChange = (jobId: string, isSaved: boolean) => {
+  const handleSaveChange = async (jobId: string, isSaved: boolean) => {
     if (isSaved) {
       setSavedJobIds(prev => [...prev, jobId]);
-      // Add job to saved jobs if it exists in the current jobs list
-      const job = appliedJobs.find(j => j.id === jobId);
-      if (job) {
-        setSavedJobs(prev => [...prev, job]);
+      // Find job in applied jobs list or fetch from Firestore
+      let jobToAdd = appliedJobs.find(j => j.id === jobId);
+      
+      if (!jobToAdd) {
+        try {
+          const jobDoc = await getDoc(doc(db, 'jobs', jobId));
+          if (jobDoc.exists()) {
+            jobToAdd = {
+              id: jobDoc.id,
+              ...jobDoc.data()
+            } as Job;
+          }
+        } catch (error) {
+          console.error('Error fetching job details:', error);
+        }
+      }
+      
+      if (jobToAdd) {
+        setSavedJobs(prev => {
+          const exists = prev.some(job => job.id === jobId);
+          return exists ? prev : [...prev, jobToAdd];
+        });
       }
     } else {
       setSavedJobIds(prev => prev.filter(id => id !== jobId));
       setSavedJobs(prev => prev.filter(job => job.id !== jobId));
     }
+    
+    // Refresh saved jobs from database to ensure consistency
+    setTimeout(() => {
+      fetchSavedJobs();
+    }, 100);
   };
 
-  const handleApply = (jobId: string) => {
-    console.log('Applying for job:', jobId);
-    // TODO: Implement job application logic or redirect to job details
+  const handleApply = async (jobId: string) => {
+    if (!user) {
+      alert('Please log in to apply for jobs');
+      return;
+    }
+
+    try {
+      // Use the service function to apply to the job
+      const { applyToJob } = await import('../services/jobService');
+      await applyToJob(jobId, user.uid);
+      
+      // Refresh the applied jobs list
+      await fetchAppliedJobs();
+      
+      alert('Application submitted successfully!');
+    } catch (error) {
+      console.error('Error applying to job:', error);
+      alert('Failed to apply to job. Please try again.');
+    }
   };
 
   if (!user) {
@@ -288,8 +327,8 @@ const JobSeekerDashboard: React.FC = () => {
         </div>
         <div className="bg-yellow-50 p-4 rounded">
           <h4 className="font-semibold text-yellow-800">Saved Jobs</h4>
-          <p className="text-2xl font-bold text-yellow-600">0</p>
-          <p className="text-xs text-gray-500">Feature coming soon</p>
+          <p className="text-2xl font-bold text-yellow-600">{savedJobs.length}</p>
+          <p className="text-xs text-gray-500">Bookmarked jobs</p>
         </div>
         <div className="bg-green-50 p-4 rounded">
           <h4 className="font-semibold text-green-800">Profile Views</h4>
