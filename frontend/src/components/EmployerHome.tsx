@@ -36,17 +36,35 @@ interface Application {
   status: 'pending' | 'reviewed' | 'accepted' | 'rejected';
 }
 
+interface EnhancedStats {
+  totalJobs: number;
+  activeJobs: number;
+  totalApplications: number;
+  newApplicationsToday: number;
+  newApplicationsThisWeek: number;
+  applicationRate: number; // applications per job
+  averageTimeToFill: number; // days
+  jobsNeedingAttention: number; // jobs with no applications
+  recentlyFilled: number; // jobs filled in last 30 days
+}
+
 const EmployerHome: React.FC = () => {
   const [user, userLoading] = useAuthState(auth);
   const [loading, setLoading] = useState(true);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
-  const [stats, setStats] = useState({
+  const [stats, setStats] = useState<EnhancedStats>({
     totalJobs: 0,
     activeJobs: 0,
     totalApplications: 0,
-    newApplicationsToday: 0
+    newApplicationsToday: 0,
+    newApplicationsThisWeek: 0,
+    applicationRate: 0,
+    averageTimeToFill: 0,
+    jobsNeedingAttention: 0,
+    recentlyFilled: 0
   });
+  const [recentActivity, setRecentActivity] = useState<any[]>([]);
 
   // Debug logging
   console.log('EmployerHome - User:', user?.email, 'Role:', localStorage.getItem('role'));
@@ -65,9 +83,11 @@ const EmployerHome: React.FC = () => {
       setLoading(true);
       await Promise.all([
         loadJobs(),
-        loadApplications(),
-        calculateStats()
+        loadApplications()
       ]);
+      // Calculate stats and activity after data is loaded
+      await calculateStats();
+      generateRecentActivity();
     } catch (err: any) {
       console.error('Error loading employer data:', err);
     } finally {
@@ -77,10 +97,10 @@ const EmployerHome: React.FC = () => {
 
   const loadJobs = async () => {
     try {
+      // Use companyId instead of company name to avoid index issues
       const q = query(
         collection(db, 'jobs'),
-        where('company', '==', user?.displayName || ''),
-        orderBy('postedDate', 'desc'),
+        where('companyId', '==', user?.uid || ''),
         limit(5)
       );
       const snapshot = await getDocs(q);
@@ -91,7 +111,13 @@ const EmployerHome: React.FC = () => {
         active: doc.data().active || false,
         applicants: doc.data().applicants || []
       } as Job));
-      setJobs(jobsData);
+      
+      // Sort by postedDate on the client side to avoid index requirement
+      const sortedJobs = jobsData.sort((a, b) => 
+        new Date(b.postedDate).getTime() - new Date(a.postedDate).getTime()
+      );
+      
+      setJobs(sortedJobs);
     } catch (err) {
       console.error('Error loading jobs:', err);
     }
@@ -99,10 +125,23 @@ const EmployerHome: React.FC = () => {
 
   const loadApplications = async () => {
     try {
+      // First get all jobs by this employer
+      const jobsQuery = query(
+        collection(db, 'jobs'),
+        where('companyId', '==', user?.uid)
+      );
+      const jobsSnapshot = await getDocs(jobsQuery);
+      const jobIds = jobsSnapshot.docs.map(doc => doc.id);
+      
+      if (jobIds.length === 0) {
+        setApplications([]);
+        return;
+      }
+      
+      // Then get applications for those jobs
       const q = query(
         collection(db, 'applications'),
-        where('companyId', '==', user?.uid),
-        orderBy('appliedDate', 'desc'),
+        where('jobId', 'in', jobIds),
         limit(5)
       );
       const snapshot = await getDocs(q);
@@ -111,9 +150,17 @@ const EmployerHome: React.FC = () => {
         ...doc.data(),
         status: doc.data().status || 'pending'
       } as Application));
-      setApplications(applicationsData);
+      
+      // Sort by appliedDate on client side
+      const sortedApplications = applicationsData.sort((a, b) => 
+        new Date(b.appliedDate).getTime() - new Date(a.appliedDate).getTime()
+      );
+      
+      setApplications(sortedApplications);
     } catch (err) {
       console.error('Error loading applications:', err);
+      // Set empty array on error to prevent UI issues
+      setApplications([]);
     }
   };
 
@@ -121,20 +168,97 @@ const EmployerHome: React.FC = () => {
     try {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
+      
+      const weekAgo = new Date();
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      weekAgo.setHours(0, 0, 0, 0);
 
       const newApplicationsToday = applications.filter(app => 
         new Date(app.appliedDate) >= today
       ).length;
 
+      const newApplicationsThisWeek = applications.filter(app => 
+        new Date(app.appliedDate) >= weekAgo
+      ).length;
+
+      const activeJobs = jobs.filter(j => j.active);
+      const applicationRate = activeJobs.length > 0 ? 
+        (applications.length / activeJobs.length) : 0;
+
+      const jobsNeedingAttention = activeJobs.filter(job => 
+        (job.applicants?.length || 0) === 0
+      ).length;
+
+      // Calculate average time to fill (simplified - using job age for active jobs)
+      const averageTimeToFill = activeJobs.length > 0 ? 
+        activeJobs.reduce((sum, job) => {
+          const daysSincePosted = Math.floor(
+            (new Date().getTime() - new Date(job.postedDate).getTime()) / (1000 * 60 * 60 * 24)
+          );
+          return sum + daysSincePosted;
+        }, 0) / activeJobs.length : 0;
+
+      // Recently filled jobs (jobs that are no longer active and had applications)
+      const recentlyFilled = jobs.filter(job => 
+        !job.active && (job.applicants?.length || 0) > 0
+      ).length;
+
       setStats({
         totalJobs: jobs.length,
-        activeJobs: jobs.filter(j => j.active).length,
+        activeJobs: activeJobs.length,
         totalApplications: applications.length,
-        newApplicationsToday
+        newApplicationsToday,
+        newApplicationsThisWeek,
+        applicationRate: Math.round(applicationRate * 10) / 10,
+        averageTimeToFill: Math.round(averageTimeToFill),
+        jobsNeedingAttention,
+        recentlyFilled
       });
     } catch (err) {
       console.error('Error calculating stats:', err);
     }
+  };
+
+  const generateRecentActivity = () => {
+    const activities: any[] = [];
+    
+    // Add recent applications
+    applications.slice(0, 3).forEach(app => {
+      activities.push({
+        id: `app-${app.id}`,
+        type: 'application',
+        title: `New application for ${app.jobTitle}`,
+        subtitle: `From ${app.applicantName}`,
+        time: app.appliedDate,
+        icon: '👤',
+        color: 'blue'
+      });
+    });
+
+    // Add jobs needing attention
+    const jobsNeedingAttention = jobs.filter(job => 
+      job.active && (job.applicants?.length || 0) === 0
+    );
+    
+    jobsNeedingAttention.slice(0, 2).forEach(job => {
+      const daysSincePosted = Math.floor(
+        (new Date().getTime() - new Date(job.postedDate).getTime()) / (1000 * 60 * 60 * 24)
+      );
+      activities.push({
+        id: `job-${job.id}`,
+        type: 'job_attention',
+        title: `${job.title} needs attention`,
+        subtitle: `Posted ${daysSincePosted} days ago, no applications yet`,
+        time: job.postedDate,
+        icon: '⚠️',
+        color: 'orange'
+      });
+    });
+
+    // Sort by time (most recent first)
+    activities.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+    
+    setRecentActivity(activities.slice(0, 5));
   };
 
   if (userLoading || loading) {
@@ -195,8 +319,9 @@ const EmployerHome: React.FC = () => {
         </div>
       </div>
 
-      {/* Stats Cards */}
+      {/* Enhanced Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        {/* Total Jobs */}
         <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-blue-500">
           <div className="flex items-center">
             <div className="flex-1">
@@ -209,9 +334,10 @@ const EmployerHome: React.FC = () => {
               </svg>
             </div>
           </div>
-          <p className="text-xs text-gray-500 mt-2">{stats.activeJobs} active</p>
+          <p className="text-xs text-gray-500 mt-2">{stats.activeJobs} active • {stats.recentlyFilled} filled</p>
         </div>
 
+        {/* Applications */}
         <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-green-500">
           <div className="flex items-center">
             <div className="flex-1">
@@ -224,32 +350,15 @@ const EmployerHome: React.FC = () => {
               </svg>
             </div>
           </div>
-          <p className="text-xs text-gray-500 mt-2">+{stats.newApplicationsToday} today</p>
+          <p className="text-xs text-gray-500 mt-2">+{stats.newApplicationsToday} today • +{stats.newApplicationsThisWeek} this week</p>
         </div>
 
-        <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-yellow-500">
-          <div className="flex items-center">
-            <div className="flex-1">
-              <p className="text-sm font-medium text-gray-600">Active Jobs</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.activeJobs}</p>
-            </div>
-            <div className="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center">
-              <svg className="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-          </div>
-          <p className="text-xs text-gray-500 mt-2">Currently live</p>
-        </div>
-
+        {/* Application Rate */}
         <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-purple-500">
           <div className="flex items-center">
             <div className="flex-1">
-              <p className="text-sm font-medium text-gray-600">Response Rate</p>
-              <p className="text-2xl font-bold text-gray-900">
-                {stats.totalApplications > 0 ? 
-                  Math.round((applications.filter(app => app.status !== 'pending').length / stats.totalApplications) * 100) : 0}%
-              </p>
+              <p className="text-sm font-medium text-gray-600">Application Rate</p>
+              <p className="text-2xl font-bold text-gray-900">{stats.applicationRate}</p>
             </div>
             <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center">
               <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -257,9 +366,57 @@ const EmployerHome: React.FC = () => {
               </svg>
             </div>
           </div>
-          <p className="text-xs text-gray-500 mt-2">Applications reviewed</p>
+          <p className="text-xs text-gray-500 mt-2">Applications per job</p>
+        </div>
+
+        {/* Jobs Needing Attention */}
+        <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-orange-500">
+          <div className="flex items-center">
+            <div className="flex-1">
+              <p className="text-sm font-medium text-gray-600">Need Attention</p>
+              <p className="text-2xl font-bold text-gray-900">{stats.jobsNeedingAttention}</p>
+            </div>
+            <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
+              <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+              </svg>
+            </div>
+          </div>
+          <p className="text-xs text-gray-500 mt-2">Jobs with no applications</p>
         </div>
       </div>
+
+      {/* Recent Activity Feed */}
+      {recentActivity.length > 0 && (
+        <div className="bg-white rounded-lg shadow-sm p-6 mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">Recent Activity</h3>
+            <span className="text-sm text-gray-500">Live updates</span>
+          </div>
+          <div className="space-y-3">
+            {recentActivity.map((activity) => (
+              <div key={activity.id} className="flex items-start space-x-3 p-3 rounded-lg hover:bg-gray-50 transition-colors">
+                <div className="flex-shrink-0">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm ${
+                    activity.color === 'blue' ? 'bg-blue-100 text-blue-600' :
+                    activity.color === 'orange' ? 'bg-orange-100 text-orange-600' :
+                    'bg-gray-100 text-gray-600'
+                  }`}>
+                    {activity.icon}
+                  </div>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900">{activity.title}</p>
+                  <p className="text-sm text-gray-500">{activity.subtitle}</p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    {new Date(activity.time).toLocaleDateString()} at {new Date(activity.time).toLocaleTimeString()}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Quick Actions */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">

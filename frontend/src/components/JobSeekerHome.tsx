@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { auth, db } from '../firebaseConfig';
 import { 
@@ -11,8 +11,8 @@ import {
   where,
   limit
 } from 'firebase/firestore';
-import { Link } from 'react-router-dom';
-import JobSearch from './JobSearch';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
+import AdvancedJobSearch from './AdvancedJobSearch';
 import JobCard from './JobCard';
 import { applyToJob } from '../services/jobService';
 
@@ -40,6 +40,8 @@ interface JobSeekerStats {
 
 const JobSeekerHome: React.FC = () => {
   const [user, userLoading] = useAuthState(auth);
+  const navigate = useNavigate();
+  const location = useLocation();
   const [loading, setLoading] = useState(true);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [allJobs, setAllJobs] = useState<Job[]>([]); // Keep original jobs data
@@ -51,32 +53,10 @@ const JobSeekerHome: React.FC = () => {
   const [searchFilters, setSearchFilters] = useState<{ keyword: string; location: string; type: string } | null>(null);
   const [activeTab, setActiveTab] = useState<'all' | 'featured' | 'recent' | 'saved'>('all');
   const [error, setError] = useState<string | null>(null);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
-  useEffect(() => {
-    // Load jobs regardless of user login status for job seekers
-    loadJobSeekerData();
-  }, []); // Remove user dependency
 
-  const loadJobSeekerData = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      await Promise.all([
-        loadAllJobs(),
-        loadFeaturedJobs(),
-        loadRecentJobs(),
-        loadSavedJobs(),
-        loadStats()
-      ]);
-    } catch (err: any) {
-      console.error('Error loading job seeker data:', err);
-      setError(`Failed to load jobs: ${err.message}`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadAllJobs = async () => {
+  const loadAllJobs = useCallback(async () => {
     try {
       // First try to load all jobs without complex filters
       const jobsRef = collection(db, 'jobs');
@@ -115,9 +95,21 @@ const JobSeekerHome: React.FC = () => {
         } as Job;
       });
 
-      console.log('Loaded jobs:', jobsData.length);
+      console.log('Setting jobs state with:', jobsData.length, 'jobs');
+      console.log('Current user UID:', user?.uid);
+      
+      // Check which jobs the user has applied to
+      const userAppliedJobs = jobsData.filter(job => 
+        job.applicants && job.applicants.includes(user?.uid || '')
+      );
+      console.log('User has applied to:', userAppliedJobs.length, 'jobs');
+      userAppliedJobs.forEach(job => {
+        console.log(`Applied to: ${job.title}`);
+      });
+
       setJobs(jobsData);
       setAllJobs(jobsData); // Keep original data
+      return jobsData;
     } catch (err) {
       console.error('Error loading all jobs:', err);
       // Try to load without any filters as absolute fallback
@@ -130,17 +122,17 @@ const JobSeekerHome: React.FC = () => {
           applicants: doc.data().applicants || [],
           status: doc.data().status || 'approved'
         } as Job));
-        console.log('Fallback: Loaded jobs without filters:', jobsData.length);
         setJobs(jobsData);
         setAllJobs(jobsData); // Keep original data
+        return jobsData;
       } catch (fallbackErr) {
         console.error('Even fallback query failed:', fallbackErr);
         throw fallbackErr;
       }
     }
-  };
+  }, [user?.uid]);
 
-  const loadFeaturedJobs = async () => {
+  const loadFeaturedJobs = useCallback(async () => {
     try {
       let q;
       try {
@@ -165,15 +157,14 @@ const JobSeekerHome: React.FC = () => {
         status: doc.data().status || 'approved'
       } as Job));
       
-      console.log('Loaded featured jobs:', featuredData.length);
       setFeaturedJobs(featuredData);
     } catch (err) {
       console.error('Error loading featured jobs:', err);
       setFeaturedJobs([]);
     }
-  };
+  }, []);
 
-  const loadRecentJobs = async () => {
+  const loadRecentJobs = useCallback(async (currentJobs: Job[]) => {
     try {
       let q;
       try {
@@ -185,7 +176,7 @@ const JobSeekerHome: React.FC = () => {
       } catch (queryError) {
         console.warn('Recent jobs query failed:', queryError);
         // Use jobs from loadAllJobs as fallback
-        setRecentJobs(jobs.slice(0, 8));
+        setRecentJobs(currentJobs.slice(0, 8));
         return;
       }
 
@@ -198,16 +189,15 @@ const JobSeekerHome: React.FC = () => {
         status: doc.data().status || 'approved'
       } as Job));
       
-      console.log('Loaded recent jobs:', recentData.length);
       setRecentJobs(recentData);
     } catch (err) {
       console.error('Error loading recent jobs:', err);
       // Use first 8 jobs as fallback
-      setRecentJobs(jobs.slice(0, 8));
+      setRecentJobs(currentJobs.slice(0, 8));
     }
-  };
+  }, []);
 
-  const loadSavedJobs = async () => {
+  const loadSavedJobs = useCallback(async (currentJobs: Job[]) => {
     if (!user) {
       setSavedJobs([]);
       setSavedJobIds([]);
@@ -224,7 +214,7 @@ const JobSeekerHome: React.FC = () => {
 
         if (savedIds.length > 0) {
           // Get the actual job data for saved jobs
-          const savedJobsData = jobs.filter(job => savedIds.includes(job.id));
+          const savedJobsData = currentJobs.filter(job => savedIds.includes(job.id));
           setSavedJobs(savedJobsData);
         } else {
           setSavedJobs([]);
@@ -238,49 +228,128 @@ const JobSeekerHome: React.FC = () => {
       setSavedJobs([]);
       setSavedJobIds([]);
     }
-  };
+  }, [user]);
 
-  const loadStats = async () => {
+  const loadStats = useCallback(async (currentJobs: Job[], currentSavedJobs: Job[]) => {
     try {
       // Calculate stats based on loaded jobs
-      const userApplications = user ? jobs.filter(job => 
+      const userApplications = user ? currentJobs.filter(job => 
         job.applicants && job.applicants.includes(user.uid)
       ).length : 0;
 
+
       setStats({
-        totalJobs: jobs.length,
+        totalJobs: currentJobs.length,
         appliedJobs: userApplications,
-        savedJobs: savedJobs.length,
+        savedJobs: currentSavedJobs.length,
         profileViews: 0 // Would be calculated from profile views
       });
     } catch (err) {
       console.error('Error loading stats:', err);
       // Provide default stats
       setStats({
-        totalJobs: jobs.length,
+        totalJobs: currentJobs.length,
         appliedJobs: 0,
         savedJobs: 0,
         profileViews: 0
       });
     }
-  };
+  }, [user]);
+
+  const loadJobSeekerData = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // Load jobs first
+      const loadedJobs = await loadAllJobs();
+      
+      // Then load other data based on the jobs
+      await Promise.all([
+        loadFeaturedJobs(),
+        loadRecentJobs(loadedJobs),
+        loadSavedJobs(loadedJobs)
+      ]);
+      
+      // Load stats after saved jobs are loaded
+      await loadStats(loadedJobs, []);
+    } catch (err: any) {
+      console.error('Error loading job seeker data:', err);
+      setError(`Failed to load jobs: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  }, [loadAllJobs, loadFeaturedJobs, loadRecentJobs, loadSavedJobs, loadStats]);
+
+  useEffect(() => {
+    // Load jobs regardless of user login status for job seekers
+    loadJobSeekerData();
+  }, [loadJobSeekerData, refreshTrigger]);
+
+  // Force refresh when component mounts (user navigates back)
+  useEffect(() => {
+    if (user) {
+      console.log('Component mounted, forcing refresh...');
+      setRefreshTrigger(prev => prev + 1);
+    }
+  }, [user]);
+
+  // Reload jobs when user navigates back to this page
+  useEffect(() => {
+    if (user && location.pathname === '/') {
+      console.log('Navigated to home page, reloading jobs...');
+      // Force reload immediately
+      loadJobSeekerData();
+    }
+  }, [location.pathname, loadJobSeekerData, user]);
+
+  // Also reload when component becomes visible (fallback)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden && user && location.pathname === '/') {
+        console.log('Page became visible, reloading jobs...');
+        loadJobSeekerData();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [loadJobSeekerData, user, location.pathname]);
+
 
   // Recalculate stats when jobs or saved jobs change
   useEffect(() => {
     if (jobs.length > 0) {
-      loadStats();
+      loadStats(jobs, savedJobs);
     }
-  }, [jobs, savedJobs, user]);
+  }, [jobs, savedJobs, loadStats]);
+
 
   // Reload saved jobs when user changes or jobs are loaded
   useEffect(() => {
     if (user && jobs.length > 0) {
-      loadSavedJobs();
+      loadSavedJobs(jobs);
     }
-  }, [user, jobs]);
+  }, [user, jobs, loadSavedJobs]);
 
-  const handleSearch = (filters: { keyword: string; location: string; type: string }) => {
-    setSearchFilters(filters);
+  const handleSearch = (filters: {
+    keyword: string;
+    location: string;
+    type: string;
+    salary: string;
+    experience: string;
+    company: string;
+    remote: boolean;
+    datePosted: string;
+    radius: string;
+  }) => {
+    // Convert advanced filters to basic search format
+    const basicFilters = {
+      keyword: filters.keyword,
+      location: filters.location,
+      type: filters.type
+    };
+    setSearchFilters(basicFilters);
     setActiveTab('all');
   };
 
@@ -291,18 +360,23 @@ const JobSeekerHome: React.FC = () => {
         return;
       }
 
+      // First, update Firestore
       await applyToJob(jobId, user.uid);
 
-      // Optimistically update local state so UI reflects the application
+      // Then update local state
       const updateJobApplicants = (prevJobs: Job[]) => prevJobs.map((job: Job) => {
         if (job.id !== jobId) return job;
         const applicants = Array.isArray(job.applicants) ? job.applicants : [];
-        if (applicants.includes(user.uid)) return job;
+        if (applicants.includes(user.uid)) {
+          return job;
+        }
         return { ...job, applicants: [...applicants, user.uid] } as Job;
       });
       
-      setJobs(updateJobApplicants);
-      setAllJobs(updateJobApplicants);
+      const updatedJobs = updateJobApplicants(jobs);
+      
+      setJobs(updatedJobs);
+      setAllJobs(updatedJobs);
 
       setRecentJobs((prev: Job[]) => prev.map((job: Job) => {
         if (job.id !== jobId) return job;
@@ -317,12 +391,17 @@ const JobSeekerHome: React.FC = () => {
         return { ...job, applicants: [...applicants, user.uid] } as Job;
       }));
 
-      await loadStats();
+      // Update stats with the updated jobs
+      await loadStats(updatedJobs, savedJobs);
       alert('Application submitted');
     } catch (err: any) {
       console.error('Failed to apply to job:', err);
       alert(`Failed to apply: ${err.message || 'Unknown error'}`);
     }
+  };
+
+  const handleViewMore = (jobId: string) => {
+    navigate(`/jobs/${jobId}`);
   };
 
   const getDisplayJobs = () => {
@@ -342,6 +421,7 @@ const JobSeekerHome: React.FC = () => {
         displayJobs = allJobs;
         break;
     }
+    
     
     // Apply search filters if they exist
     if (searchFilters && activeTab === 'all') {
@@ -530,7 +610,8 @@ const JobSeekerHome: React.FC = () => {
       {/* Search Section */}
       <div className="bg-white rounded-lg shadow-sm p-6 mb-8">
         <h2 className="text-2xl font-bold text-gray-900 mb-6">Find Your Perfect Job</h2>
-        <JobSearch onSearch={handleSearch} />
+        <AdvancedJobSearch onSearch={handleSearch} />
+        
       </div>
 
       {/* Job Categories */}
@@ -596,8 +677,10 @@ const JobSeekerHome: React.FC = () => {
               getDisplayJobs().map(job => (
                 <div key={job.id} className="block hover:shadow-lg transition-shadow">
                   <JobCard
+                    key={`${job.id}-${user ? job.applicants?.includes(user.uid) : false}`}
                     job={job}
                     onApply={handleApply}
+                    onViewMore={handleViewMore}
                     isSaved={savedJobIds.includes(job.id)}
                     isApplied={user ? job.applicants?.includes(user.uid) : false}
                     onSaveChange={handleSaveChange}

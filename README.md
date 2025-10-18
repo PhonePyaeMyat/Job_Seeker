@@ -5,13 +5,22 @@ A full-stack job search platform built with React.js (TypeScript), Firebase Func
 ## Features
 
 ### Core Functionality
-- **User Authentication & Authorization** - Secure login/signup with Firebase Auth
+- **User Authentication & Authorization** - Secure login/signup with Firebase Auth (email/password and Google OAuth)
 - **Job Search & Filtering** - Search jobs by keyword, location, and type with pagination
+- **Advanced Job Search** - Advanced filtering with multiple criteria (salary, experience, company, remote work, date posted)
 - **Job Management** - Create, read, update, and delete job listings
 - **Role-Based Dashboards** - Separate interfaces for job seekers, employers, and admin
-- **Job Applications** - Apply to jobs and track application status
-- **Job Details** - Detailed job view with application functionality
+- **Job Applications** - Apply to jobs with profile data or CV upload, track application status
+- **Job Details** - Detailed job view with application functionality and company information
+- **Job Recommendations** - AI-powered job recommendations based on user profile and preferences
+- **Company Profiles** - Detailed company information and job listings
 - **Admin Panel** - Administrative controls and system oversight
+- **User Profiles** - Comprehensive profile management with role-specific fields
+- **Job Saving** - Save jobs for later viewing and application
+- **About Page** - Information about the platform
+- **Contact Page** - Contact information and support
+- **Privacy Policy** - Privacy policy and data handling
+- **Terms of Service** - Terms and conditions
 
 ### User Experience
 - **Responsive Design** - Mobile-first design with Tailwind CSS
@@ -19,27 +28,33 @@ A full-stack job search platform built with React.js (TypeScript), Firebase Func
 - **Modern UI Components** - Reusable components with consistent styling
 - **Error Handling** - Comprehensive error states and user feedback
 - **Loading States** - Smooth loading indicators and transitions
+- **Landing Page** - Professional landing page with featured jobs, company spotlight, and job alerts
+- **Job Alerts** - Set up job alerts for specific criteria
+- **Company Spotlight** - Featured companies with ratings and job counts
+- **Salary Insights** - Industry salary information and trends
 ## Tech Stack
 
 ### Frontend
-- **React.js 18** with TypeScript
-- **React Router DOM v7** for client-side routing
-- **Tailwind CSS** for styling and responsive design
-- **React Firebase Hooks** for Firebase integration
-- **Firebase SDK v11** for authentication and real-time data
-- **Create React App** for build tooling
+- **React.js 18.2.0** with TypeScript 4.9.5
+- **React Router DOM v7.6.3** for client-side routing
+- **Tailwind CSS v3.4.1** for styling and responsive design
+- **React Firebase Hooks v5.1.1** for Firebase integration
+- **Firebase SDK v11.10.0** for authentication and real-time data
+- **Create React App v5.0.1** for build tooling
+- **Axios v1.10.0** for HTTP requests
 
 ### Backend
-- **Firebase Functions** (Node.js 18)
-- **Express.js** for API routing
-- **Firebase Admin SDK** for server-side Firestore operations
-- **CORS** for cross-origin request handling
+- **Firebase Functions v4.5.0** (Node.js 18)
+- **Express.js v4.18.2** for API routing
+- **Firebase Admin SDK v11.10.1** for server-side Firestore operations
+- **CORS v2.8.5** for cross-origin request handling
 
 ### Database & Infrastructure
 - **Firebase Firestore** (NoSQL database)
 - **Firebase Authentication** for user management
 - **Firebase Hosting** for frontend deployment
 - **Firebase Functions** for serverless backend API
+- **Firebase Tools v12.0.0** for deployment and emulation
 ## Project Structure
 
 ```
@@ -55,35 +70,34 @@ Job_Seeker/
 │   │   └── manifest.json            # PWA manifest
 │   ├── src/                         # Source code
 │   │   ├── components/              # Reusable React components
-│   │   │   ├── BackendStatus.tsx   # API connection status
-│   │   │   ├── Categories.tsx      # Job categories display
-│   │   │   ├── CompanyCard.tsx     # Company information card
-│   │   │   ├── EmployerHome.tsx    # Employer dashboard home
-│   │   │   ├── FeaturedJobs.tsx    # Featured jobs section
-│   │   │   ├── FilterSidebar.tsx   # Job filtering sidebar
-│   │   │   ├── Footer.tsx          # Site footer
-│   │   │   ├── Header.tsx          # Navigation header
-│   │   │   ├── JobCard.tsx         # Individual job listing card
-│   │   │   ├── JobDetails.tsx      # Detailed job view
-│   │   │   ├── JobForm.tsx         # Job creation/editing form
-│   │   │   ├── JobList.tsx         # Job listings container
-│   │   │   ├── JobSearch.tsx       # Search functionality
-│   │   │   ├── JobSeekerHome.tsx   # Job seeker dashboard home
-│   │   │   ├── Modal.tsx           # Reusable modal component
-│   │   │   ├── Pagination.tsx      # Results pagination
-│   │   │   ├── ProfileCard.tsx     # User profile display
-│   │   │   ├── SaveJobButton.tsx   # Save job functionality
-│   │   │   └── Tabs.tsx            # Tab navigation component
+│   │   │   ├── AdvancedJobSearch.tsx # Advanced job search with filters
+│   │   │   ├── ApplicationModal.tsx  # Job application modal
+│   │   │   ├── BackendStatus.tsx     # API connection status
+│   │   │   ├── CompanyProfile.tsx    # Company profile display
+│   │   │   ├── EmployerHome.tsx      # Employer dashboard home
+│   │   │   ├── Footer.tsx            # Site footer
+│   │   │   ├── Header.tsx            # Navigation header
+│   │   │   ├── JobCard.tsx           # Individual job listing card
+│   │   │   ├── JobDetails.tsx        # Detailed job view
+│   │   │   ├── JobForm.tsx           # Job creation/editing form
+│   │   │   ├── JobList.tsx           # Job listings container
+│   │   │   ├── JobRecommendations.tsx # Job recommendations component
+│   │   │   ├── JobSeekerHome.tsx     # Job seeker dashboard home
+│   │   │   ├── LandingPage.tsx       # Main landing page
+│   │   │   └── SaveJobButton.tsx     # Save job functionality
 │   │   ├── pages/                   # Page components
+│   │   │   ├── About.tsx           # About page
 │   │   │   ├── AdminPanel.tsx      # Administrative interface
-│   │   │   ├── Dashboard.tsx       # Main dashboard
+│   │   │   ├── Contact.tsx         # Contact page
 │   │   │   ├── EmployerDashboard.tsx # Employer-specific dashboard
 │   │   │   ├── JobSeekerDashboard.tsx # Job seeker dashboard
 │   │   │   ├── Login.tsx           # User login page
 │   │   │   ├── NotFound.tsx        # 404 error page
+│   │   │   ├── Privacy.tsx         # Privacy policy page
 │   │   │   ├── Profile.tsx         # User profile page
 │   │   │   ├── ServerError.tsx     # 500 error page
-│   │   │   └── SignUp.tsx          # User registration page
+│   │   │   ├── SignUp.tsx          # User registration page
+│   │   │   └── Terms.tsx           # Terms of service page
 │   │   ├── services/                # API services
 │   │   │   └── jobService.ts       # Job-related API calls
 │   │   ├── App.tsx                 # Main application component
@@ -149,6 +163,24 @@ For detailed setup instructions, see [FIREBASE_DEPLOYMENT.md](FIREBASE_DEPLOYMEN
 
 The app will run at `http://localhost:3000` with the backend API running on the Firebase Functions emulator at `http://localhost:5001`.
 
+### Manual Backend Setup (Alternative)
+
+If you prefer to run the backend separately:
+
+1. **Start the backend server:**
+   ```bash
+   cd functions
+   npm start
+   ```
+
+2. **Start the frontend:**
+   ```bash
+   cd frontend
+   npm start
+   ```
+
+The backend will run on `http://localhost:3001` and frontend on `http://localhost:3000`.
+
 ## Available Scripts
 
 ### Root Level Scripts
@@ -185,7 +217,8 @@ The app will run at `http://localhost:3000` with the backend API running on the 
 After deployment, your API will be available at:
 
 - **Production:** `https://us-central1-your-project-id.cloudfunctions.net/api`
-- **Local Development:** `http://localhost:5001/your-project-id/us-central1/api`
+- **Local Development (Emulator):** `http://localhost:5001/your-project-id/us-central1/api`
+- **Local Development (Manual):** `http://localhost:3001`
 
 ### Available Endpoints:
 
@@ -268,15 +301,20 @@ All endpoints interact with Firebase Firestore collections and include proper CO
 
 This project is actively maintained and includes:
 
-✅ **Complete user authentication system** - Firebase Auth integration
-✅ **Job search and filtering functionality** - Advanced search with pagination
+✅ **Complete user authentication system** - Firebase Auth integration with email/password and Google OAuth
+✅ **Job search and filtering functionality** - Advanced search with pagination and multiple criteria
 ✅ **Role-based dashboards** - Separate interfaces for job seekers, employers, and admin
-✅ **Job application system** - Apply to jobs and track applications
+✅ **Job application system** - Apply to jobs with profile data or CV upload, track applications
 ✅ **Job management** - Create, read, update, and delete job listings
 ✅ **Admin panel** - Administrative controls and system oversight
+✅ **User profile management** - Comprehensive profiles with role-specific fields
+✅ **Job saving functionality** - Save jobs for later viewing and application
 ✅ **Responsive design** - Mobile-first design with Tailwind CSS
 ✅ **Firebase integration** - Real-time updates with Firestore
 ✅ **Production-ready deployment** - Firebase Hosting and Functions
+✅ **Landing page with featured content** - Professional landing page with job alerts and company spotlight
+✅ **Company profiles** - Detailed company information and job listings
+✅ **Job recommendations** - AI-powered job recommendations based on user profile
 ## Contributing
 
 1. Fork the repository

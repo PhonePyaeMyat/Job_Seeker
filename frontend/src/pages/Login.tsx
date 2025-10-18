@@ -21,7 +21,12 @@ const Login: React.FC = () => {
   // Redirect if already logged in
   useEffect(() => {
     if (user && !userLoading) {
-      navigate('/');
+      const role = localStorage.getItem('role');
+      if (role === 'employer') {
+        navigate('/dashboard');
+      } else {
+        navigate('/');
+      }
     }
   }, [user, userLoading, navigate]);
 
@@ -129,10 +134,12 @@ const Login: React.FC = () => {
         
         await setDoc(userDocRef, userData);
         localStorage.setItem('role', 'jobseeker');
+        window.dispatchEvent(new CustomEvent('roleChanged', { detail: { role: 'jobseeker' } }));
       } else {
         // User exists, set role from Firestore document
         const existingData = userDoc.data();
         localStorage.setItem('role', existingData?.role || 'jobseeker');
+        window.dispatchEvent(new CustomEvent('roleChanged', { detail: { role: existingData?.role || 'jobseeker' } }));
       }
       
       // Navigation will be handled by useEffect

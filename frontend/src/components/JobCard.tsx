@@ -14,12 +14,21 @@ interface JobCardProps {
     applicants?: string[];
   };
   onApply: (jobId: string) => void;
+  onViewMore?: (jobId: string) => void; // New prop for view more action
   isSaved?: boolean;
   isApplied?: boolean;
   onSaveChange?: (jobId: string, isSaved: boolean) => void;
+  showApplyButton?: boolean; // New prop to control button type
 }
 
-const JobCard = ({ job, onApply, isSaved = false, isApplied = false, onSaveChange }: JobCardProps) => {
+const JobCard = ({ job, onApply, onViewMore, isSaved = false, isApplied = false, onSaveChange, showApplyButton = false }: JobCardProps) => {
+  const buttonText = isApplied 
+    ? '✓ Applied' 
+    : showApplyButton 
+    ? 'Apply Now' 
+    : 'View More';
+  
+  
   return (
     <div className="bg-white rounded-lg shadow-md p-6 mb-4 hover:shadow-lg transition-shadow">
       <div className="flex justify-between items-start">
@@ -71,15 +80,28 @@ const JobCard = ({ job, onApply, isSaved = false, isApplied = false, onSaveChang
             onSaveChange={onSaveChange}
           />
           <button
-            onClick={() => onApply(job.id)}
+            onClick={() => {
+              if (isApplied) {
+                return;
+              }
+              if (showApplyButton) {
+                onApply(job.id);
+              } else if (onViewMore) {
+                onViewMore(job.id);
+              } else {
+                onApply(job.id);
+              }
+            }}
             disabled={isApplied}
             className={`px-4 py-2 rounded transition-colors ${
               isApplied
                 ? 'bg-green-100 text-green-800 cursor-not-allowed'
-                : 'bg-blue-600 text-white hover:bg-blue-700'
+                : showApplyButton
+                ? 'bg-blue-600 text-white hover:bg-blue-700'
+                : 'bg-gray-600 text-white hover:bg-gray-700'
             }`}
           >
-            {isApplied ? '✓ Applied' : 'Apply Now'}
+            {buttonText}
           </button>
         </div>
       </div>

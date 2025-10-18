@@ -26,7 +26,7 @@ const BackendStatus: React.FC<BackendStatusProps> = ({ onError, onSuccess }) => 
         }
 
         // In development, attempt to reach local backend if present
-        const response = await axios.get('http://localhost:3001/jobs');
+        const response = await axios.get('http://127.0.0.1:5001/job-seeker-80fd8/us-central1/api/jobs');
         console.log('Backend response:', response.data);
         setStatus('connected');
         onSuccess?.();

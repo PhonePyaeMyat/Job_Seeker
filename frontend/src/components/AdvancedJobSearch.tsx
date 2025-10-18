@@ -27,6 +27,9 @@ const AdvancedJobSearch = ({ onSearch }: AdvancedJobSearchProps) => {
     radius: '25'
   });
 
+  console.log('Current filters state:', filters); // Debug log
+
+
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
@@ -36,10 +39,17 @@ const AdvancedJobSearch = ({ onSearch }: AdvancedJobSearchProps) => {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
-    setFilters(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : value
-    }));
+    
+    console.log('Input change:', name, value, type); // Debug log
+    
+    setFilters(prev => {
+      const newFilters = {
+        ...prev,
+        [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : value
+      };
+      console.log('New filters state:', newFilters); // Debug log
+      return newFilters;
+    });
   };
 
   const handleClear = () => {
@@ -73,7 +83,8 @@ const AdvancedJobSearch = ({ onSearch }: AdvancedJobSearchProps) => {
               value={filters.keyword}
               onChange={handleChange}
               placeholder="Job title, keywords, or company"
-              className="w-full px-4 py-3 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 text-lg"
+              className="w-full px-4 py-3 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 text-lg text-gray-900"
+              autoComplete="off"
             />
           </div>
 
@@ -89,7 +100,7 @@ const AdvancedJobSearch = ({ onSearch }: AdvancedJobSearchProps) => {
               value={filters.location}
               onChange={handleChange}
               placeholder="City, state, or zip code"
-              className="w-full px-4 py-3 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 text-lg"
+              className="w-full px-4 py-3 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 text-lg text-gray-900"
             />
           </div>
 
@@ -140,7 +151,7 @@ const AdvancedJobSearch = ({ onSearch }: AdvancedJobSearchProps) => {
                   name="type"
                   value={filters.type}
                   onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900"
                 >
                   <option value="">All Types</option>
                   <option value="FULL_TIME">Full Time</option>
@@ -161,7 +172,7 @@ const AdvancedJobSearch = ({ onSearch }: AdvancedJobSearchProps) => {
                   name="salary"
                   value={filters.salary}
                   onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900"
                 >
                   <option value="">Any Salary</option>
                   <option value="30000-50000">$30,000 - $50,000</option>
@@ -182,7 +193,7 @@ const AdvancedJobSearch = ({ onSearch }: AdvancedJobSearchProps) => {
                   name="experience"
                   value={filters.experience}
                   onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900"
                 >
                   <option value="">Any Experience</option>
                   <option value="entry">Entry Level (0-2 years)</option>
@@ -204,7 +215,7 @@ const AdvancedJobSearch = ({ onSearch }: AdvancedJobSearchProps) => {
                   value={filters.company}
                   onChange={handleChange}
                   placeholder="Company name"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900"
                 />
               </div>
 
@@ -218,7 +229,7 @@ const AdvancedJobSearch = ({ onSearch }: AdvancedJobSearchProps) => {
                   name="datePosted"
                   value={filters.datePosted}
                   onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900"
                 >
                   <option value="">Any Time</option>
                   <option value="1">Last 24 hours</option>
@@ -239,7 +250,7 @@ const AdvancedJobSearch = ({ onSearch }: AdvancedJobSearchProps) => {
                   name="radius"
                   value={filters.radius}
                   onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900"
                 >
                   <option value="5">5 miles</option>
                   <option value="10">10 miles</option>

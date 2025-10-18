@@ -15,6 +15,7 @@ const app = express();
 // Configure CORS for production and development
 const allowedOrigins = [
   'http://localhost:3000',
+  'http://localhost:3001',
   'https://job-seeker-80fd8.web.app'
 ];
 

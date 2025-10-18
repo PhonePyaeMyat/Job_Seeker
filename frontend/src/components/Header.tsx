@@ -27,10 +27,13 @@ const Header: React.FC = () => {
           <Link to="/" className="hover:underline">Home</Link>
           
           {/* Role-specific navigation */}
+          {user && role === 'jobseeker' && (
+            <Link to="/jobs" className="hover:underline">Browse Jobs</Link>
+          )}
+          
           {user && role === 'employer' && (
             <Link to="/post-job" className="hover:underline">Post Job</Link>
           )}
-          
           
           {user && role === 'admin' && (
             <>

@@ -193,10 +193,17 @@ const SignUp: React.FC = () => {
       await setDoc(doc(db, 'users', user.uid), userData);
       localStorage.setItem('role', form.role);
       
+      // Trigger a custom event to notify App component of role change
+      window.dispatchEvent(new CustomEvent('roleChanged', { detail: { role: form.role } }));
+      
       setSuccess(true);
       setTimeout(() => {
-        // Redirect to specific job if coming from landing page, otherwise go to dashboard
-        navigate(redirectTo || '/dashboard');
+        // Redirect based on role
+        if (form.role === 'employer') {
+          navigate(redirectTo || '/dashboard');
+        } else {
+          navigate(redirectTo || '/');
+        }
       }, 1500);
     } catch (err: any) {
       console.error('Signup error:', err);
@@ -258,10 +265,17 @@ const SignUp: React.FC = () => {
       await setDoc(doc(db, 'users', user.uid), userData);
       localStorage.setItem('role', form.role);
       
+      // Trigger a custom event to notify App component of role change
+      window.dispatchEvent(new CustomEvent('roleChanged', { detail: { role: form.role } }));
+      
       setSuccess(true);
       setTimeout(() => {
-        // Redirect to specific job if coming from landing page, otherwise go to dashboard
-        navigate(redirectTo || '/dashboard');
+        // Redirect based on role
+        if (form.role === 'employer') {
+          navigate(redirectTo || '/dashboard');
+        } else {
+          navigate(redirectTo || '/');
+        }
       }, 1500);
     } catch (err: any) {
       console.error('Google signup error:', err);

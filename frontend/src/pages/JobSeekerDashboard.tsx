@@ -3,7 +3,7 @@ import { useAuthState } from 'react-firebase-hooks/auth';
 import { auth } from '../firebaseConfig';
 import { collection, query, where, getDocs, getDoc, doc } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import JobCard from '../components/JobCard';
 
 interface Job {
@@ -20,6 +20,7 @@ interface Job {
 
 const JobSeekerDashboard: React.FC = () => {
   const [user] = useAuthState(auth);
+  const navigate = useNavigate();
   const [appliedJobs, setAppliedJobs] = useState<Job[]>([]);
   const [savedJobs, setSavedJobs] = useState<Job[]>([]);
   const [savedJobIds, setSavedJobIds] = useState<string[]>([]);
@@ -176,6 +177,10 @@ const JobSeekerDashboard: React.FC = () => {
     }
   };
 
+  const handleViewMore = (jobId: string) => {
+    navigate(`/jobs/${jobId}`);
+  };
+
   if (!user) {
     return (
       <div className="max-w-2xl mx-auto mt-10 p-6 bg-white rounded shadow">
@@ -305,6 +310,7 @@ const JobSeekerDashboard: React.FC = () => {
                           <JobCard
                             job={job}
                             onApply={handleApply}
+                            onViewMore={handleViewMore}
                             isSaved={savedJobIds.includes(job.id)}
                             onSaveChange={handleSaveChange}
                           />

@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { auth, db } from '../firebaseConfig';
-import { doc, getDoc, collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, collection, addDoc, serverTimestamp, updateDoc, arrayUnion } from 'firebase/firestore';
 
 interface ApplicationModalProps {
   isOpen: boolean;
@@ -35,7 +35,7 @@ const ApplicationModal: React.FC<ApplicationModalProps> = ({
 }) => {
   const [user] = useAuthState(auth);
   const [applicationMethod, setApplicationMethod] = useState<'profile' | 'cv'>('profile');
-  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -58,13 +58,7 @@ const ApplicationModal: React.FC<ApplicationModalProps> = ({
     coverLetter: ''
   });
 
-  useEffect(() => {
-    if (isOpen && user) {
-      loadUserProfile();
-    }
-  }, [isOpen, user]);
-
-  const loadUserProfile = async () => {
+  const loadUserProfile = useCallback(async () => {
     if (!user) return;
 
     try {
@@ -99,7 +93,13 @@ const ApplicationModal: React.FC<ApplicationModalProps> = ({
     } catch (error) {
       console.error('Error loading user profile:', error);
     }
-  };
+  }, [user]);
+
+  useEffect(() => {
+    if (isOpen && user) {
+      loadUserProfile();
+    }
+  }, [isOpen, user, loadUserProfile]);
 
   const handleProfileChange = (field: string, value: any) => {
     setProfileData(prev => ({
@@ -173,6 +173,11 @@ const ApplicationModal: React.FC<ApplicationModalProps> = ({
         };
 
         await addDoc(collection(db, 'applications'), profileApplication);
+        
+        // Also update the job's applicants array
+        await updateDoc(doc(db, 'jobs', job.id), {
+          applicants: arrayUnion(user.uid)
+        });
       } else {
         // Apply with CV upload
         if (!cvFile) {
@@ -195,8 +200,17 @@ const ApplicationModal: React.FC<ApplicationModalProps> = ({
         };
 
         await addDoc(collection(db, 'applications'), cvApplication);
+        
+        // Also update the job's applicants array
+        await updateDoc(doc(db, 'jobs', job.id), {
+          applicants: arrayUnion(user.uid)
+        });
       }
 
+      console.log('Application submitted successfully!');
+      console.log('User UID:', user.uid);
+      console.log('Job ID:', job.id);
+      
       setSuccess(true);
       setTimeout(() => {
         onApplicationSubmitted();

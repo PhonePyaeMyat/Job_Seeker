@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import JobSearch from './JobSearch';
+import AdvancedJobSearch from './AdvancedJobSearch';
 import JobCard from './JobCard';
 import BackendStatus from './BackendStatus';
 import { searchJobs, Job, getJobs, applyToJob } from '../services/jobService';
@@ -23,16 +23,12 @@ const JobList = () => {
     try {
       setLoading(true);
       setError(null); // Clear previous errors
-      console.log('Fetching jobs...', { pageNum, filtersArg });
-      
       let data;
       if (filtersArg) {
         data = await searchJobs(filtersArg.keyword, filtersArg.location, filtersArg.type, pageNum, size);
       } else {
         data = await getJobs(pageNum, size);
       }
-      
-      console.log('Jobs data received:', data);
       
       // Handle paginated response
       setJobs(data.jobs || []);
@@ -62,11 +58,26 @@ const JobList = () => {
     // eslint-disable-next-line
   }, [page]);
 
-  const handleSearch = (filtersObj: { keyword: string; location: string; type: string }) => {
-    console.log('Search triggered with filters:', filtersObj);
-    setFilters(filtersObj);
+  const handleSearch = (filtersObj: {
+    keyword: string;
+    location: string;
+    type: string;
+    salary: string;
+    experience: string;
+    company: string;
+    remote: boolean;
+    datePosted: string;
+    radius: string;
+  }) => {
+    // Convert advanced filters to basic search format for API compatibility
+    const basicFilters = {
+      keyword: filtersObj.keyword,
+      location: filtersObj.location,
+      type: filtersObj.type
+    };
+    setFilters(basicFilters);
     setPage(0);
-    fetchJobs(0, filtersObj);
+    fetchJobs(0, basicFilters);
   };
 
   const handleApply = async (jobId: string) => {
@@ -76,6 +87,10 @@ const JobList = () => {
     } catch (err) {
       console.error('Error navigating to job:', err);
     }
+  };
+
+  const handleViewMore = (jobId: string) => {
+    navigate(`/jobs/${jobId}`);
   };
 
   const totalPages = Math.ceil(total / size);
@@ -115,7 +130,7 @@ const JobList = () => {
         onSuccess={handleBackendSuccess}
       />
       
-      <JobSearch onSearch={handleSearch} />
+      <AdvancedJobSearch onSearch={handleSearch} />
       
       <div className="space-y-4">
         {jobs.length === 0 ? (
@@ -124,13 +139,13 @@ const JobList = () => {
           </div>
         ) : (
           jobs.map(job => (
-            <Link to={`/jobs/${job.id}`} key={job.id} className="block hover:shadow-lg transition-shadow">
-              <JobCard
-                job={job}
-                onApply={handleApply}
-                isApplied={user ? job.applicants?.includes(user.uid) : false}
-              />
-            </Link>
+            <JobCard
+              key={job.id}
+              job={job}
+              onApply={handleApply}
+              onViewMore={handleViewMore}
+              isApplied={user ? job.applicants?.includes(user.uid) : false}
+            />
           ))
         )}
       </div>

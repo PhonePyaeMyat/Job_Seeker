@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import JobList from './components/JobList';
 import JobForm from './components/JobForm';
@@ -6,7 +6,6 @@ import SignUp from './pages/SignUp';
 import Login from './pages/Login';
 import JobSeekerDashboard from './pages/JobSeekerDashboard';
 import EmployerDashboard from './pages/EmployerDashboard';
-import LandingPage from './components/LandingPage';
 import EmployerHome from './components/EmployerHome';
 import JobSeekerHome from './components/JobSeekerHome';
 import Profile from './pages/Profile';
@@ -23,14 +22,42 @@ import Contact from './pages/Contact';
 import Terms from './pages/Terms';
 import Privacy from './pages/Privacy';
 import CompanyProfile from './components/CompanyProfile';
-import IndeedStyleLanding from './components/IndeedStyleLanding';
+import LandingPage from './components/LandingPage';
 
 function App() {
   const [user, loading] = useAuthState(auth);
-  const role = localStorage.getItem('role') || 'jobseeker';
+  const [role, setRole] = useState(localStorage.getItem('role') || 'jobseeker');
+
+  // Update role when localStorage changes
+  useEffect(() => {
+    const handleStorageChange = () => {
+      setRole(localStorage.getItem('role') || 'jobseeker');
+    };
+
+    const handleRoleChange = (event: CustomEvent) => {
+      setRole(event.detail.role);
+    };
+
+    // Listen for storage changes and custom role change events
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('roleChanged', handleRoleChange as EventListener);
+    
+    // Also check on mount
+    handleStorageChange();
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('roleChanged', handleRoleChange as EventListener);
+    };
+  }, []);
+
+  // Update role when user changes
+  useEffect(() => {
+    if (user) {
+      setRole(localStorage.getItem('role') || 'jobseeker');
+    }
+  }, [user]);
   
-  // Debug logging
-  console.log('App - User:', user?.email, 'Role:', role);
   
   if (loading) return (
     <div className="flex justify-center items-center min-h-screen">
@@ -43,9 +70,21 @@ function App() {
       <main>
         
           <Routes>
-            <Route path="/" element={user ? (role === 'admin' ? <AdminPanel /> : role === 'employer' ? <EmployerHome /> : role === 'jobseeker' ? <JobSeekerHome /> : <JobList />) : <IndeedStyleLanding />} />
-            <Route path="/jobs" element={<JobList />} />
-            <Route path="/jobs/:id" element={<JobDetails />} />
+            <Route path="/" element={user ? (role === 'admin' ? <AdminPanel /> : role === 'employer' ? <EmployerHome /> : role === 'jobseeker' ? <JobSeekerHome /> : <JobList />) : <LandingPage />} />
+            <Route path="/jobs" element={
+              user ? (
+                role === 'employer' ? <Navigate to="/dashboard" /> :
+                role === 'admin' ? <JobList /> :
+                <JobList />
+              ) : <JobList />
+            } />
+            <Route path="/jobs/:id" element={
+              user ? (
+                role === 'employer' ? <Navigate to="/dashboard" /> :
+                role === 'admin' ? <JobDetails /> :
+                <JobDetails />
+              ) : <JobDetails />
+            } />
             <Route path="/post-job" element={<JobForm />} />
             <Route path="/signup" element={<SignUp />} />
             <Route path="/login" element={<Login />} />

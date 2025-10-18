@@ -38,7 +38,7 @@ const JobForm: React.FC = () => {
       return;
     }
     try {
-      await axios.post('http://localhost:3001/jobs', {
+      await axios.post('http://127.0.0.1:5001/job-seeker-80fd8/us-central1/api/jobs', {
         ...form,
         skills: form.skills.split(',').map(s => s.trim()).filter(Boolean),
       });
