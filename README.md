@@ -17,6 +17,7 @@ A full-stack job search platform built with React.js (TypeScript), Firebase Func
 - **Admin Panel** - Administrative controls and system oversight
 - **User Profiles** - Comprehensive profile management with role-specific fields
 - **Job Saving** - Save jobs for later viewing and application
+- **Greenhouse Integration** - Sync jobs from Greenhouse job board automatically
 - **About Page** - Information about the platform
 - **Contact Page** - Contact information and support
 - **Privacy Policy** - Privacy policy and data handling

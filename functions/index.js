@@ -2,6 +2,7 @@ const functions = require('firebase-functions');
 const admin = require('firebase-admin');
 const express = require('express');
 const cors = require('cors');
+const axios = require('axios');
 
 // Initialize Firebase Admin
 admin.initializeApp();
@@ -171,6 +172,137 @@ app.get('/jobs/search', async (req, res) => {
   }
 });
 
+// Fetch Greenhouse jobs without storing (for display/search only)
+app.get('/jobs/greenhouse/:boardToken', async (req, res) => {
+  try {
+    const { boardToken } = req.params;
+    
+    if (!boardToken) {
+      return res.status(400).json({ error: 'Missing boardToken parameter' });
+    }
+
+    // Fetch jobs from Greenhouse API
+    const greenhouseUrl = `https://boards-api.greenhouse.io/v1/boards/${boardToken}/jobs?content=true`;
+    const response = await axios.get(greenhouseUrl);
+    const greenhouseJobs = response.data.jobs || [];
+
+    console.log(`Fetched ${greenhouseJobs.length} jobs from Greenhouse for display`);
+
+    // Map jobs to your format (without storing)
+    const mappedJobs = greenhouseJobs.map(greenhouseJob => ({
+      id: `gh_${greenhouseJob.id}`, // Prefix to distinguish from Firestore jobs
+      title: greenhouseJob.title || '',
+      company: greenhouseJob.departments?.[0]?.name || 'Unknown',
+      location: greenhouseJob.location?.name || 'Unknown',
+      type: mapGreenhouseJobType(greenhouseJob),
+      salary: extractSalary(greenhouseJob),
+      description: greenhouseJob.content || '',
+      requirements: greenhouseJob.content || '',
+      experienceLevel: 'MID',
+      skills: extractSkills(greenhouseJob.content),
+      active: true,
+      postedDate: greenhouseJob.updated_at || new Date().toISOString(),
+      expiryDate: greenhouseJob.updated_at ? 
+        new Date(new Date(greenhouseJob.updated_at).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString() :
+        new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      applicants: [],
+      greenhouseId: greenhouseJob.id,
+      greenhouseInternalId: greenhouseJob.internal_job_id,
+      greenhouseUrl: greenhouseJob.absolute_url,
+      metadata: greenhouseJob.metadata,
+      source: 'greenhouse' // Mark as Greenhouse job
+    }));
+
+    res.json({
+      jobs: mappedJobs,
+      total: mappedJobs.length,
+      source: 'greenhouse'
+    });
+  } catch (error) {
+    console.error('Error fetching Greenhouse jobs:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Sync jobs from Greenhouse API to Firestore
+app.post('/jobs/sync-greenhouse', async (req, res) => {
+  try {
+    const { boardToken } = req.body;
+    
+    if (!boardToken) {
+      return res.status(400).json({ error: 'Missing boardToken parameter' });
+    }
+
+    // Fetch jobs from Greenhouse API
+    const greenhouseUrl = `https://boards-api.greenhouse.io/v1/boards/${boardToken}/jobs?content=true`;
+    const response = await axios.get(greenhouseUrl);
+    const greenhouseJobs = response.data.jobs || [];
+
+    console.log(`Fetched ${greenhouseJobs.length} jobs from Greenhouse`);
+
+    let syncedCount = 0;
+    let errorCount = 0;
+
+    // Process each job from Greenhouse
+    for (const greenhouseJob of greenhouseJobs) {
+      try {
+        // Map Greenhouse job format to our job format
+        const jobData = {
+          title: greenhouseJob.title || '',
+          company: greenhouseJob.departments?.[0]?.name || 'Unknown',
+          location: greenhouseJob.location?.name || 'Unknown',
+          type: mapGreenhouseJobType(greenhouseJob),
+          salary: extractSalary(greenhouseJob),
+          description: greenhouseJob.content || '',
+          requirements: greenhouseJob.content || '',
+          experienceLevel: 'MID', // Default since not in Greenhouse API
+          skills: extractSkills(greenhouseJob.content),
+          active: true,
+          postedDate: greenhouseJob.updated_at || new Date().toISOString(),
+          expiryDate: greenhouseJob.updated_at ? 
+            new Date(new Date(greenhouseJob.updated_at).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString() :
+            new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+          applicants: [],
+          greenhouseId: greenhouseJob.id,
+          greenhouseInternalId: greenhouseJob.internal_job_id,
+          greenhouseUrl: greenhouseJob.absolute_url,
+          metadata: greenhouseJob.metadata
+        };
+
+        // Check if job already exists (by Greenhouse ID)
+        const existingJobQuery = await jobsCollection
+          .where('greenhouseId', '==', greenhouseJob.id)
+          .get();
+
+        if (!existingJobQuery.empty) {
+          // Update existing job
+          const existingDoc = existingJobQuery.docs[0];
+          await jobsCollection.doc(existingDoc.id).update(jobData);
+          console.log(`Updated job: ${jobData.title}`);
+        } else {
+          // Create new job
+          await jobsCollection.add(jobData);
+          console.log(`Created job: ${jobData.title}`);
+        }
+        syncedCount++;
+      } catch (error) {
+        console.error(`Error processing job ${greenhouseJob.id}:`, error.message);
+        errorCount++;
+      }
+    }
+
+    res.json({
+      message: 'Greenhouse sync completed',
+      total: greenhouseJobs.length,
+      synced: syncedCount,
+      errors: errorCount
+    });
+  } catch (error) {
+    console.error('Greenhouse sync error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Apply to a job
 app.post('/jobs/:id/apply', async (req, res) => {
   try {
@@ -197,6 +329,55 @@ app.post('/jobs/:id/apply', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+// Helper function to map Greenhouse job type
+function mapGreenhouseJobType(greenhouseJob) {
+  // You can customize this mapping based on your needs
+  const title = (greenhouseJob.title || '').toLowerCase();
+  const locationName = (greenhouseJob.location?.name || '').toLowerCase();
+  
+  if (locationName.includes('remote')) {
+    return 'REMOTE';
+  }
+  if (title.includes('intern') || title.includes('internship')) {
+    return 'INTERNSHIP';
+  }
+  if (title.includes('contract') || title.includes('consultant')) {
+    return 'CONTRACT';
+  }
+  if (title.includes('part-time') || title.includes('part time')) {
+    return 'PART_TIME';
+  }
+  return 'FULL_TIME';
+}
+
+// Helper function to extract salary information
+function extractSalary(greenhouseJob) {
+  // Greenhouse doesn't provide salary in the standard API
+  // You might need to parse it from the content or add custom fields
+  return 'Competitive';
+}
+
+// Helper function to extract skills from job description
+function extractSkills(content) {
+  const commonSkills = [
+    'JavaScript', 'TypeScript', 'React', 'Node.js', 'Python', 'Java', 'C++',
+    'SQL', 'MongoDB', 'PostgreSQL', 'AWS', 'Docker', 'Kubernetes', 'Git',
+    'HTML', 'CSS', 'Angular', 'Vue.js', 'Express', 'Django', 'Flask',
+    'Machine Learning', 'AI', 'Data Science', 'DevOps', 'CI/CD'
+  ];
+  
+  const foundSkills = [];
+  const lowerContent = (content || '').toLowerCase();
+  
+  commonSkills.forEach(skill => {
+    if (lowerContent.includes(skill.toLowerCase())) {
+      foundSkills.push(skill);
+    }
+  });
+  
+  return foundSkills;
+}
 
 // Export the Express app as a Firebase Function
 exports.api = functions.https.onRequest(app);

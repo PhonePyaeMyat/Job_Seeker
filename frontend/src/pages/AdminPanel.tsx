@@ -15,6 +15,7 @@ import {
   DocumentSnapshot
 } from 'firebase/firestore';
 import { Link } from 'react-router-dom';
+import GreenhouseIntegration from '../components/GreenhouseIntegration';
 
 interface User {
   id: string;
@@ -56,7 +57,7 @@ interface AdminStats {
 
 const AdminPanel: React.FC = () => {
   const [user, userLoading] = useAuthState(auth);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'jobs' | 'reports' | 'settings'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'jobs' | 'reports' | 'settings' | 'integrations'>('dashboard');
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState<User[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -345,7 +346,7 @@ const AdminPanel: React.FC = () => {
       <div className="bg-white rounded-lg shadow-sm mb-6">
         <div className="border-b border-gray-200">
           <nav className="-mb-px flex space-x-8 px-6">
-            {['dashboard', 'users', 'jobs', 'reports', 'settings'].map((tab) => (
+            {['dashboard', 'users', 'jobs', 'reports', 'integrations', 'settings'].map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab as any)}
@@ -815,6 +816,74 @@ const AdminPanel: React.FC = () => {
                     <h4 className="font-medium mb-2">Financial Report</h4>
                     <p className="text-sm text-gray-600">Revenue and cost analysis</p>
                   </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Integrations Tab */}
+          {activeTab === 'integrations' && (
+            <div className="space-y-6">
+              <div className="bg-white border rounded-lg p-6">
+                <h3 className="text-lg font-semibold mb-4">Third-Party Integrations</h3>
+                <p className="text-gray-600 mb-6">Connect your job board with external services to sync jobs and enhance functionality.</p>
+                
+                <div className="space-y-6">
+                  {/* Greenhouse Integration */}
+                  <div className="border border-gray-200 rounded-lg p-6">
+                    <div className="flex items-start justify-between mb-4">
+                      <div>
+                        <h4 className="text-lg font-semibold text-gray-900">Greenhouse</h4>
+                        <p className="text-sm text-gray-600 mt-1">
+                          Sync jobs from your Greenhouse job board automatically
+                        </p>
+                      </div>
+                      <span className="px-3 py-1 bg-green-100 text-green-800 text-xs font-medium rounded-full">
+                        Available
+                      </span>
+                    </div>
+                    <div className="mt-4">
+                      <GreenhouseIntegration 
+                        onSuccess={(msg) => {
+                          setSuccess(msg);
+                          setTimeout(() => setSuccess(null), 5000);
+                        }}
+                        onError={(err) => {
+                          setError(err);
+                          setTimeout(() => setError(null), 5000);
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Coming Soon Integrations */}
+                  <div className="border border-gray-200 rounded-lg p-6 opacity-50">
+                    <div className="flex items-start justify-between mb-4">
+                      <div>
+                        <h4 className="text-lg font-semibold text-gray-900">Workday</h4>
+                        <p className="text-sm text-gray-600 mt-1">
+                          Sync jobs from Workday
+                        </p>
+                      </div>
+                      <span className="px-3 py-1 bg-gray-100 text-gray-600 text-xs font-medium rounded-full">
+                        Coming Soon
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="border border-gray-200 rounded-lg p-6 opacity-50">
+                    <div className="flex items-start justify-between mb-4">
+                      <div>
+                        <h4 className="text-lg font-semibold text-gray-900">Lever</h4>
+                        <p className="text-sm text-gray-600 mt-1">
+                          Sync jobs from Lever
+                        </p>
+                      </div>
+                      <span className="px-3 py-1 bg-gray-100 text-gray-600 text-xs font-medium rounded-full">
+                        Coming Soon
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

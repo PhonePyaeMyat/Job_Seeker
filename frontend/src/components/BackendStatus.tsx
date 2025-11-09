@@ -16,30 +16,44 @@ const BackendStatus: React.FC<BackendStatusProps> = ({ onError, onSuccess }) => 
     const check = async () => {
       try {
         const isProd = window.location.hostname !== 'localhost';
-        if (isProd) {
-          // In production, verify Firestore connectivity instead of localhost backend
-          const q = query(collection(db, 'jobs'), limit(1));
-          await getDocs(q);
-          setStatus('connected');
-          onSuccess?.();
-          return;
-        }
-
-        // In development, attempt to reach local backend if present
-        const response = await axios.get('http://127.0.0.1:5001/job-seeker-80fd8/us-central1/api/jobs');
-        console.log('Backend response:', response.data);
+        
+        // Always check Firestore connectivity (main data source)
+        const q = query(collection(db, 'jobs'), limit(1));
+        await getDocs(q);
+        console.log('Firestore connection: OK');
+        
+                 // If in development, optionally check backend API (silent check)
+         if (!isProd) {
+           try {
+             const controller = new AbortController();
+             const timeoutId = setTimeout(() => controller.abort(), 1500);
+             
+             const response = await axios.get('http://127.0.0.1:5001/job-seeker-80fd8/us-central1/api/jobs', {
+               timeout: 1500,
+               signal: controller.signal,
+               validateStatus: () => true // Don't throw on any status code
+             });
+             
+             clearTimeout(timeoutId);
+             
+             if (response.status === 200) {
+               console.log('✓ Backend API: Available');
+             }
+           } catch (apiErr: any) {
+             // Silently ignore - backend is optional
+             // Only log if it's an unexpected error (not network/timeout)
+             if (apiErr.code !== 'ECONNREFUSED' && apiErr.code !== 'ERR_CANCELED' && !apiErr.message.includes('timeout')) {
+               console.log('Backend API check:', apiErr.message);
+             }
+           }
+         }
+        
         setStatus('connected');
         onSuccess?.();
       } catch (err: any) {
-        console.error('Backend connection failed:', err);
+        console.error('Database connection failed:', err);
         setStatus('error');
-        let errorMessage = '';
-        
-        if (err?.code === 'ECONNREFUSED') {
-          errorMessage = 'Backend server is not running. For dev, start it or ignore this message.';
-        } else {
-          errorMessage = `Connection failed: ${err?.message || 'Unknown error'}`;
-        }
+        let errorMessage = 'Unable to connect to database. Please check your internet connection.';
         
         setError(errorMessage);
         onError?.(errorMessage);
