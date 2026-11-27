@@ -7,7 +7,6 @@ import { signOut } from 'firebase/auth';
 const Header: React.FC = () => {
   const [user] = useAuthState(auth);
   const role = localStorage.getItem('role') || 'jobseeker';
-  const isAdmin = user?.email === 'admin@jobseeker.com' || user?.displayName === 'admin';
 
   const handleLogout = async () => {
     try {

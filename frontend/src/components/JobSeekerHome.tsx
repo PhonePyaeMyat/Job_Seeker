@@ -118,7 +118,7 @@ const JobSeekerHome: React.FC = () => {
         throw fallbackErr;
       }
     }
-  }, [user?.uid]);
+  }, []);
 
   const loadFeaturedJobs = useCallback(async () => {
     try {

@@ -3,7 +3,7 @@ import AdvancedJobSearch from './AdvancedJobSearch';
 import JobCard from './JobCard';
 import BackendStatus from './BackendStatus';
 import { searchJobs, Job, getJobs, SearchFilters } from '../services/jobService';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { auth } from '../firebaseConfig';
 

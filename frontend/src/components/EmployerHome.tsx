@@ -2,10 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { auth, db } from '../firebaseConfig';
 import { 
-  collection, 
-  getDocs, 
-  query, 
-  orderBy, 
+  collection,
+  getDocs,
+  query,
   where,
   limit
 } from 'firebase/firestore';
@@ -76,6 +75,7 @@ const EmployerHome: React.FC = () => {
     }
 
     loadEmployerData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   const loadEmployerData = async () => {
