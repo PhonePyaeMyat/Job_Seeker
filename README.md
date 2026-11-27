@@ -1,339 +1,372 @@
-# Job Seeker
+# Job Seeker - Job Search & Management Platform
 
-A full-stack job search platform built with React.js (TypeScript), Firebase Functions, and Firebase Firestore. Features user authentication, job management, and role-based dashboards for job seekers, employers, and administrators.
+A comprehensive job search and management platform built with React, Node.js, and Firebase. This application connects job seekers with employers, providing a seamless experience for job searching, application management, and recruitment.
 
-## Features
+## 🚀 Features
 
-### Core Functionality
-- **User Authentication & Authorization** - Secure login/signup with Firebase Auth (email/password and Google OAuth)
-- **Job Search & Filtering** - Search jobs by keyword, location, and type with pagination
-- **Advanced Job Search** - Advanced filtering with multiple criteria (salary, experience, company, remote work, date posted)
-- **Job Management** - Create, read, update, and delete job listings
-- **Role-Based Dashboards** - Separate interfaces for job seekers, employers, and admin
-- **Job Applications** - Apply to jobs with profile data or CV upload, track application status
-- **Job Details** - Detailed job view with application functionality and company information
-- **Job Recommendations** - Rule-based job recommendations based on user profile (skills, experience, location and recency scoring; no LLM yet)
-- **Company Profiles** - Detailed company information and job listings
-- **Admin Panel** - Administrative controls and system oversight
-- **User Profiles** - Comprehensive profile management with role-specific fields
-- **Job Saving** - Save jobs for later viewing and application
-- **Greenhouse Integration** - Sync jobs from Greenhouse job board automatically
-- **About Page** - Information about the platform
-- **Contact Page** - Contact information and support
-- **Privacy Policy** - Privacy policy and data handling
-- **Terms of Service** - Terms and conditions
+### For Job Seekers
+- **Job Search & Discovery**: Search jobs by keyword, location, type, salary, experience level, and more
+- **Advanced Filtering**: Filter by remote work, date posted, company, and salary range
+- **Job Applications**: Apply to jobs with profile data or CV upload, track application status (pending → interview → offer / rejected)
+- **Saved Jobs**: Save interesting jobs for later review
+- **Dashboard**: View application statistics, interviews, offers, and saved jobs
+- **Profile Management**: Manage personal information, skills, experience, and resume (uploaded to Firebase Storage)
+- **Job Recommendations**: Get personalized job recommendations based on your profile
 
-### User Experience
-- **Responsive Design** - Mobile-first design with Tailwind CSS
-- **Real-time Updates** - Live data synchronization with Firebase Firestore
-- **Modern UI Components** - Reusable components with consistent styling
-- **Error Handling** - Comprehensive error states and user feedback
-- **Loading States** - Smooth loading indicators and transitions
-- **Landing Page** - Professional landing page with featured jobs, company spotlight, and job alerts
-- **Company Spotlight** - Featured companies with ratings and job counts
-## Tech Stack
+### For Employers
+- **Job Posting**: Create and manage job listings
+- **Applicant Management**: View and manage applications, move them through the status pipeline (pending → interview → offer / rejected)
+- **Dashboard Analytics**: Real-time statistics on job performance and applications, with date filters
+- **Company Profile**: Manage company information (verified by an admin — see `ADMIN_LOGIN_GUIDE.md`)
+- **Application Tracking**: Track applicants through the hiring process
+
+### For Administrators
+- **User Management**: Manage users, roles, and permissions
+- **Job Moderation**: Approve, reject, or delete job postings
+- **Company Verification**: Verify employers so a Verified badge shows on their company profile and job listings
+- **System Monitoring**: View platform statistics and reports
+
+## 🛠️ Technology Stack
 
 ### Frontend
-- **React.js 18.2.0** with TypeScript 4.9.5
-- **React Router DOM v7.6.3** for client-side routing
-- **Tailwind CSS v3.4.1** for styling and responsive design
-- **React Firebase Hooks v5.1.1** for Firebase integration
-- **Firebase SDK v11.10.0** for authentication and real-time data
-- **Create React App v5.0.1** for build tooling
-- **Axios v1.10.0** for HTTP requests
+- **React 18** with TypeScript
+- **Tailwind CSS** for styling
+- **React Router** for navigation
+- **Firebase SDK** for authentication and database
+- **React Firebase Hooks** for real-time data
 
 ### Backend
-- **Firebase Functions v4.5.0** (Node.js 18)
-- **Express.js v4.18.2** for API routing
-- **Firebase Admin SDK v11.10.1** for server-side Firestore operations
-- **CORS v2.8.5** for cross-origin request handling
+- **Node.js** with Express.js
+- **Firebase Functions** for serverless deployment
+- **Firebase Firestore** for database
+- **Firebase Storage** for CV/resume uploads
+- **Firebase Auth** for authentication
 
-### Database & Infrastructure
-- **Firebase Firestore** (NoSQL database)
-- **Firebase Authentication** for user management
-- **Firebase Hosting** for frontend deployment
-- **Firebase Functions** for serverless backend API
-- **Firebase Tools v12.0.0** for deployment and emulation
-## Project Structure
+### External Integrations
+- **Greenhouse API** for job board integration
+
+## 📋 Prerequisites
+
+- Node.js (v18 or higher)
+- npm or yarn
+- Firebase CLI (for deployment)
+- Firebase project setup
+
+## 🚀 Getting Started
+
+### 1. Clone the Repository
+```bash
+git clone <repository-url>
+cd Job_Seeker
+```
+
+### 2. Install Dependencies
+```bash
+npm run install-all
+```
+
+This will install dependencies for both the root, frontend, and functions directories.
+
+### 3. Environment Setup
+
+Create a `.env` file in the `frontend` directory with your Firebase configuration:
+
+```env
+REACT_APP_FIREBASE_API_KEY=your_api_key
+REACT_APP_FIREBASE_AUTH_DOMAIN=your_auth_domain
+REACT_APP_FIREBASE_PROJECT_ID=your_project_id
+REACT_APP_FIREBASE_STORAGE_BUCKET=your_storage_bucket
+REACT_APP_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
+REACT_APP_FIREBASE_APP_ID=your_app_id
+REACT_APP_FIREBASE_MEASUREMENT_ID=your_measurement_id
+```
+
+**API URL**: the frontend talks to the backend through `REACT_APP_API_URL`
+(see `frontend/.env.example`). Without it, it defaults to the deployed
+Cloud Functions URL — job posting will NOT work against a local emulator
+unless `REACT_APP_API_URL` points at it. For Firebase Hosting the config
+values above are the only ones needed — Firebase Hosting injects nothing
+automatically, so set the variables in your Vercel/Netlify/hosting
+environment too.
+
+### 4. Firebase Setup
+
+1. Create a Firebase project at [Firebase Console](https://console.firebase.google.com/)
+2. Enable Authentication (Email/Password and Google)
+3. Enable Firestore Database
+4. Enable Storage (for CV/resume uploads — `storage.rules` in the repo root)
+5. Deploy Firestore rules and Storage rules:
+```bash
+firebase deploy --only firestore:rules,firestore:indexes,storage
+```
+6. Deploy functions:
+```bash
+cd functions
+npm run deploy
+```
+
+### 5. Run the Application
+
+#### Development Mode
+```bash
+npm run dev
+```
+
+This starts both the frontend (port 3000) and backend functions (port 5001).
+
+#### Frontend Only
+```bash
+cd frontend
+npm start
+```
+
+#### Backend Only
+```bash
+cd functions
+npm run serve
+```
+
+## 📁 Project Structure
 
 ```
 Job_Seeker/
-├── functions/                          # Firebase Functions (Backend API)
-│   ├── index.js                       # Main functions file with Express routes
-│   ├── package.json                   # Functions dependencies
-├── frontend/                          # React Frontend Application
-│   ├── public/                       # Static assets
-│   │   ├── index.html               # Main HTML template
-│   │   └── manifest.json            # PWA manifest
-│   ├── src/                         # Source code
-│   │   ├── components/              # Reusable React components
-│   │   │   ├── AdvancedJobSearch.tsx # Advanced job search with filters
-│   │   │   ├── config.ts               # API base URL (REACT_APP_API_URL)
-│   │   │   ├── ApplicationModal.tsx  # Job application modal
-│   │   │   ├── BackendStatus.tsx     # API connection status
-│   │   │   ├── CompanyProfile.tsx    # Company profile display
-│   │   │   ├── EmployerHome.tsx      # Employer dashboard home
-│   │   │   ├── Footer.tsx            # Site footer
-│   │   │   ├── Header.tsx            # Navigation header
-│   │   │   ├── JobCard.tsx           # Individual job listing card
-│   │   │   ├── JobDetails.tsx        # Detailed job view
-│   │   │   ├── JobForm.tsx           # Job creation/editing form
-│   │   │   ├── JobList.tsx           # Job listings container
-│   │   │   ├── JobRecommendations.tsx # Job recommendations component
-│   │   │   ├── JobSeekerHome.tsx     # Job seeker dashboard home
-│   │   │   ├── LandingPage.tsx       # Main landing page
-│   │   │   └── SaveJobButton.tsx     # Save job functionality
-│   │   ├── pages/                   # Page components
-│   │   │   ├── About.tsx           # About page
-│   │   │   ├── AdminPanel.tsx      # Administrative interface
-│   │   │   ├── Contact.tsx         # Contact page
-│   │   │   ├── EmployerDashboard.tsx # Employer-specific dashboard
-│   │   │   ├── JobSeekerDashboard.tsx # Job seeker dashboard
-│   │   │   ├── Login.tsx           # User login page
-│   │   │   ├── NotFound.tsx        # 404 error page
-│   │   │   ├── Privacy.tsx         # Privacy policy page
-│   │   │   ├── Profile.tsx         # User profile page
-│   │   │   ├── ServerError.tsx     # 500 error page
-│   │   │   ├── SignUp.tsx          # User registration page
-│   │   │   └── Terms.tsx           # Terms of service page
-│   │   ├── services/                # API services
-│   │   │   ├── userService.ts      # Role lookup from Firestore user doc
-│   │   │   └── jobService.ts       # Job-related API calls
-│   │   ├── App.tsx                 # Main application component
-│   │   ├── firebaseConfig.ts       # Firebase configuration
-│   │   ├── index.css               # Global styles
-│   │   └── index.tsx               # Application entry point
-├── frontend/.env.example        # Example frontend env vars (copy to .env.local)
-│   ├── package.json                # Frontend dependencies
-│   ├── tailwind.config.js          # Tailwind CSS configuration
-│   └── tsconfig.json               # TypeScript configuration
-├── firebase.json                    # Firebase project configuration
-├── firestore.rules                  # Firestore security rules
-├── firestore.indexes.json          # Database indexes
-├── package.json                     # Root package.json with scripts
-├── package-lock.json               # Dependency lock file
-├── FIREBASE_DEPLOYMENT.md          # Deployment documentation
-├── LICENSE                          # MIT License
-└── README.md                       # This file
+├── frontend/                 # React frontend application
+│   ├── public/              # Static files
+│   ├── src/
+│   │   ├── components/      # Reusable UI components
+│   │   ├── pages/          # Page components
+│   │   ├── services/       # API services
+│   │   │   ├── jobService.ts      # Jobs + applications (search, apply, status pipeline)
+│   │   │   ├── userService.ts     # User profile helpers
+│   │   │   ├── storageService.ts  # Firebase Storage CV/resume uploads
+│   │   │   ├── companyService.ts  # Company records + verification
+│   │   │   └── greenhouseService.ts
+│   │   ├── firebaseConfig.ts # Firebase configuration (Auth, Firestore, Storage)
+│   │   ├── config.ts       # API base URL (REACT_APP_API_URL)
+│   │   └── App.tsx         # Main application component
+│   ├── package.json
+│   └── .env.example        # Copy to .env and fill in your Firebase keys
+├── functions/               # Firebase Functions (Express API)
+│   ├── index.js            # Main API server
+│   ├── package.json
+│   └── .eslintrc.js
+├── firebase.json           # Firebase configuration (hosting, functions, firestore, storage)
+├── firestore.rules         # Firestore security rules
+├── firestore.indexes.json  # Firestore composite indexes
+├── storage.rules           # Firebase Storage security rules (resumes + CVs, owner-only)
+├── package.json            # Root package.json with scripts
+└── README.md
 ```
-## Getting Started
 
-### Prerequisites
-- **Node.js** (v18 or higher)
-- **Firebase account** and project
-- **Firebase CLI** (`npm install -g firebase-tools`)
+## 🔧 Available Scripts
 
-### Quick Start
-
-1. **Install dependencies:**
-   ```bash
-   npm run install-all
-   ```
-
-2. **Configure Firebase:**
-   - Update `.firebaserc` with your Firebase project ID
-   - Copy `frontend/.env.example` to `frontend/.env.local` and fill in your
-     Firebase project values (`REACT_APP_FIREBASE_*`) and `REACT_APP_API_URL`
-
-3. **Deploy to Firebase:**
-   ```bash
-   npm run deploy
-   ```
-
-For detailed setup instructions, see [FIREBASE_DEPLOYMENT.md](FIREBASE_DEPLOYMENT.md).
-
-## Local Development
-
-### Using Firebase Emulators
-
-1. **Start Firebase emulators:**
-   ```bash
-   npm run emulators
-   ```
-
-2. **Start the frontend:**
-   ```bash
-   npm run dev:frontend
-   ```
-
-3. **Or start both together:**
-   ```bash
-   npm run dev
-   ```
-
-The app will run at `http://localhost:3000` with the backend API running on the Firebase Functions emulator at `http://localhost:5001`.
-
-### Manual Backend Setup (Alternative)
-
-The backend is a Firebase Functions app, so it runs through the Functions
-emulator (`npm run emulators:functions`) on port 5001 — there is no
-standalone server on port 3001. `npm start` inside `functions/` opens the
-Functions shell, it does not start an HTTP server. Set
-`REACT_APP_API_URL=http://127.0.0.1:5001/job-seeker-80fd8/us-central1/api`
-in `frontend/.env.local` when developing against the emulator.
-
-## Available Scripts
-
-### Root Level Scripts
-- `npm run install-all` - Install all dependencies (root, frontend, and functions)
-- `npm run dev` - Start both frontend and functions in development mode
-- `npm run dev:frontend` - Start only the frontend development server
-- `npm run dev:functions` - Start only the Firebase Functions emulator
+### Root Directory
+- `npm run install-all` - Install all dependencies
+- `npm run dev` - Start both frontend and backend in development mode
 - `npm run build` - Build the frontend for production
-- `npm run deploy` - Deploy everything to Firebase
-- `npm run deploy:hosting` - Deploy only the frontend to Firebase Hosting
-- `npm run deploy:functions` - Deploy only the functions to Firebase Functions
-- `npm run deploy:firestore` - Deploy only Firestore rules and indexes
-- `npm run emulators` - Start all Firebase emulators
-- `npm run emulators:functions` - Start only the Functions emulator
-- `npm run emulators:firestore` - Start only the Firestore emulator
-- `npm run lint` - Run ESLint on the functions code
-- `npm run test` - Run frontend tests
-- `npm run clean` - Clean all build artifacts and node_modules
+- `npm run lint` - Run linting for functions
+- `npm run emulators` - Start Firebase emulators
 
-### Frontend Scripts
-- `npm start` - Start the React development server
-- `npm run build` - Build the app for production
-- `npm test` - Run the test suite
-- `npm run eject` - Eject from Create React App (irreversible)
+### Frontend
+- `npm start` - Start development server
+- `npm run build` - Build for production
+- `npm test` - Run tests
 
-### Functions Scripts
-- `npm run serve` - Start the Functions emulator
-- `npm run shell` - Start the Functions shell
-- `npm run deploy` - Deploy functions to Firebase
-- `npm run logs` - View function logs
+### Functions
+- `npm run serve` - Start functions emulator
+- `npm run deploy` - Deploy functions
 - `npm run lint` - Run ESLint
-## API Endpoints
+- `npm run logs` - View function logs
 
-After deployment, your API will be available at:
+## 🔐 Authentication & Authorization
 
-- **Production:** `https://us-central1-your-project-id.cloudfunctions.net/api`
-- **Local Development (Emulator):** `http://localhost:5001/your-project-id/us-central1/api`
-- **Local Development (Manual):** `http://localhost:3001`
+### User Roles
+- **Job Seeker**: Can search jobs, apply, save jobs, manage profile
+- **Employer**: Can post jobs, manage applications, view analytics
+- **Admin**: Full access to user management, job moderation, company verification
 
-### Available Endpoints:
+### Security
+- Firebase Authentication for user management
+- Role-based access control (RBAC) — the role is read from the Firestore
+  user document, never from localStorage and never from a client-chosen
+  code (the old hardcoded admin code was removed in Phase 1)
+- Firestore security rules for data protection
+- Storage security rules: resumes and CVs are readable only by their owner;
+  employers see a CV through the download URL stored on the application
+- API endpoints require an ID token for writes; write routes check
+  ownership or admin status server-side
 
-#### Job Management
-- `GET /jobs` - Get all jobs with pagination and filtering
-- `GET /jobs/:id` - Get specific job by ID
-- `POST /jobs` - Create new job listing
-- `PUT /jobs/:id` - Update existing job
-- `DELETE /jobs/:id` - Delete job listing
-- `GET /jobs/search` - Search jobs with advanced filters (keyword, location, type)
+## 📊 API Endpoints
 
-#### Job Applications
-- `POST /jobs/:id/apply` - Apply to a job
+### Jobs
+- `GET /jobs` - Get all jobs (cursor paginated, newest first; returns `nextCursor`)
+- `GET /jobs/search` - Search jobs with filters (exact filters run as Firestore queries; substring filters run in memory over a bounded 500-document set)
+- `GET /jobs/:id` - Get job by ID
+- `POST /jobs` - Create a new job (authenticated, employer or admin only)
+- `PUT /jobs/:id` - Update a job (owner or admin; status changes are admin-only)
+- `DELETE /jobs/:id` - Delete a job (owner or admin)
 
-#### Sample Data
-- `POST /addSampleJobs` - Add sample job data to the database (admin only; remove before a public launch)
+### Applications
+- `POST /jobs/:id/apply` - Apply to a job (authenticated, idempotent — applying twice returns `alreadyApplied: true`)
+- `GET /jobs/:id/applications` - Applications for one job (job poster or admin only)
+- `GET /applications/employer` - All applications for the caller's jobs, with counts by status; optional `?status=`, `?from=`, `?to=`
+- `PATCH /applications/:id/status` - Move an application to `pending` / `interview` / `offer` / `rejected` (job poster or admin only; only the status field may change)
 
-All endpoints interact with Firebase Firestore collections and include proper CORS handling for cross-origin requests.
+### Greenhouse Integration
+- `GET /jobs/greenhouse/:boardToken` - Fetch jobs from Greenhouse (display only)
+- `POST /jobs/sync-greenhouse` - Sync jobs from Greenhouse to Firestore (admin only)
 
-## Database Schema
+## 🗄️ Database Schema
 
-### Firestore Collections
+### Collections
 
-#### Jobs Collection (`/jobs/{jobId}`)
-- **Read Access:** Public (anyone can browse jobs)
-- **Write Access:** Authenticated users only
-- **Fields:** 
-  - `title` - Job title
-  - `company` - Company name
-  - `location` - Job location
-  - `type` - Job type (FULL_TIME, PART_TIME, CONTRACT, REMOTE, INTERNSHIP)
-  - `salary` - Salary range
-  - `description` - Job description
-  - `requirements` - Job requirements
-  - `experienceLevel` - Required experience level
-  - `skills` - Array of required skills
-  - `active` - Boolean for job status
-  - `postedDate` - When job was posted
-  - `expiryDate` - When job expires
-  - `applicants` - Array of user IDs who applied
-  - `companyId` - Reference to company
+#### Users (`users/{userId}`)
+```typescript
+{
+  uid: string;
+  email: string;
+  displayName: string;
+  role: 'jobseeker' | 'employer' | 'admin';
+  phone?: string;
+  location?: string;
+  summary?: string;
+  skills?: string[];
+  experience?: string;
+  education?: string;
+  resume?: { name: string; url: string; path: string; size: number; contentType: string; uploadedAt: string };
+  resumeUrl?: string; // back-compat copy of resume.url
+  companyName?: string; // employers
+  companyWebsite?: string;
+  industry?: string;
+  companySize?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+```
 
-#### Users Collection (`/users/{userId}`)
-- **Access:** Users can only access their own data
-- **Fields:** Profile information, preferences, saved jobs, etc.
+#### Jobs (`jobs/{jobId}`)
+```typescript
+{
+  title: string;
+  company: string;
+  location: string;
+  type: 'FULL_TIME' | 'PART_TIME' | 'CONTRACT' | 'INTERNSHIP' | 'REMOTE' | 'TEMPORARY';
+  salary: string;
+  description: string;
+  requirements: string;
+  experienceLevel: 'ENTRY' | 'MID' | 'SENIOR';
+  skills: string[];
+  active: boolean;
+  status: 'pending' | 'approved' | 'rejected';
+  postedBy: string; // uid of the employer who posted (stamped server-side)
+  companyId: string; // uid of the employer — used for the employer dashboard + verification
+  postedDate: string;
+  expiryDate: string;
+  applicants: string[]; // user IDs
+}
+```
 
-#### Applications Collection (`/applications/{applicationId}`)
-- **Access:** Users can only access their own applications
-- **Fields:** jobId, userId, applicationDate, status, coverLetter, etc.
-## Environment Variables & Security
+#### Applications (`applications/{applicationId}`)
+```typescript
+{
+  jobId: string;
+  jobTitle: string;
+  companyName: string;
+  companyId: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  applicationMethod: 'quick' | 'profile' | 'cv';
+  appliedAt: Timestamp;
+  status: 'pending' | 'interview' | 'offer' | 'rejected';
+  coverLetter?: string;
+  additionalInfo?: string;
+  profileData?: { fullName, email, phone, location, summary, skills, experience, education, coverLetter };
+  cvFile?: { name: string; size: number; type: string; url: string; path: string; status: 'uploaded' };
+}
+```
 
-### Frontend Security
-- **Firebase Config:** Read from environment variables (`REACT_APP_FIREBASE_*` in `frontend/.env.local`; see `frontend/.env.example`). Never commit `.env.local`.
-- **API Keys:** Firebase public keys are safe to expose in frontend
-- **Authentication:** Handled by Firebase Auth SDK
+#### Companies (`companies/{employerUid}`)
+```typescript
+{
+  ownerId: string; // == the document ID (the employer's uid)
+  name: string;
+  website?: string;
+  industry?: string;
+  size?: string;
+  verified: boolean; // admin-only: only an admin may change this (rules + admin panel)
+  createdAt: string;
+  updatedAt: string;
+}
+```
 
-### Backend Security
-- **Service Account:** The Admin SDK uses Application Default Credentials in production. Never commit a service-account JSON file.
-- **Environment Variables:** Firebase Functions automatically handle environment variables
-- **CORS:** Configured to allow requests from your frontend domain
+#### Storage (Firebase Storage)
+```
+resumes/{uid}/{timestamp}_{fileName}   # jobseeker resume (sign-up or profile)
+cvs/{uid}/{timestamp}_{fileName}       # CV attached to one application
+```
+Owner-only read/write, PDF/Word only, max 5MB (see `storage.rules`).
 
-### Database Security
-- **Firestore Rules:** Comprehensive security rules in `firestore.rules`
-- **Authentication Required:** Most write operations require user authentication
-- **Data Validation:** Server-side validation for job data on all write endpoints, and Firebase ID-token authentication on all write endpoints
-- **User Isolation:** Users can only access their own data
+## 🚀 Deployment
 
-### Admin access
+### Firebase Hosting
+```bash
+npm run build
+firebase deploy
+```
 
-There is no admin sign-up and no admin access code. Admin is granted by an
-existing admin (Admin Panel → Promote) or by creating an `admins/{uid}`
-document in the Firebase console. See `ADMIN_LOGIN_GUIDE.md`.
+### Vercel
+1. Connect your repository to Vercel
+2. Set the build command: `cd frontend && npm run build`
+3. Set the output directory: `frontend/build`
+4. Add your Firebase environment variables in the Vercel dashboard
 
-## Firebase Configuration
-
-### Core Configuration Files
-- `firebase.json` - Main Firebase configuration for hosting, functions, and Firestore
-- `firestore.rules` - Database security rules with role-based access control
-- `firestore.indexes.json` - Database indexes for optimal query performance
-- `FIREBASE_DEPLOYMENT.md` - Detailed deployment instructions
-
-### Project Structure
-- **Hosting:** Serves the React app from `frontend/build`
-- **Functions:** Node.js backend API in the `functions` directory
-- **Firestore:** NoSQL database with collections for jobs, users, companies, and applications
-## Development Status
-
-This project is actively maintained and includes:
-
-✅ **Complete user authentication system** - Firebase Auth integration with email/password and Google OAuth
-✅ **Job search and filtering functionality** - Advanced search with pagination and multiple criteria
-✅ **Role-based dashboards** - Separate interfaces for job seekers, employers, and admin
-✅ **Job application system** - Apply to jobs with profile data or CV upload, track applications
-✅ **Job management** - Create, read, update, and delete job listings
-✅ **Admin panel** - Administrative controls and system oversight
-✅ **User profile management** - Comprehensive profiles with role-specific fields
-✅ **Job saving functionality** - Save jobs for later viewing and application
-✅ **Responsive design** - Mobile-first design with Tailwind CSS
-✅ **Firebase integration** - Real-time updates with Firestore
-✅ **Deployment** - Firebase Hosting and Functions
-✅ **Landing page with featured content** - Professional landing page with job alerts and company spotlight
-✅ **Company profiles** - Detailed company information and job listings
-✅ **Job recommendations** - Rule-based job recommendations based on user profile (skills, experience, location, recency)
-## Contributing
+## 🤝 Contributing
 
 1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+2. Create a feature branch
+3. Make your changes
+4. Test thoroughly
+5. Submit a pull request
 
-### Development Guidelines
-- Follow TypeScript best practices
-- Use Tailwind CSS for styling
-- Write comprehensive error handling
-- Test your changes thoroughly
-- Update documentation as needed
-## License
+## 📝 License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
-## Acknowledgments
+## 🆘 Support
 
-- **UI/UX Inspiration:** Modern job search platforms like Indeed, LinkedIn, and Glassdoor
-- **Technology Stack:** React.js, TypeScript, Firebase, and Tailwind CSS
-- **Architecture:** Serverless Firebase Functions with Firestore NoSQL database
-- **Deployment:** Firebase Hosting for seamless frontend deployment
+For support, please open an issue in the GitHub repository or contact the development team.
+
+## 🔄 Development Status
+
+### Phase 1 — reliability (merged as draft PR #5)
+- Fixed job posting against the live API (no more hardcoded localhost URL)
+- ID-token auth + server-side validation on all API writes
+- One apply flow with a real applied date; admin code removed; role from Firestore
+- Advanced search filters wired through; fake CV upload removed
+- Firestore rules tightened to owner-or-admin
+
+### Phase 2 — core product (this branch)
+- Application status pipeline end to end: employers move applications
+  pending → interview → offer / rejected; jobseekers see the status on
+  their dashboard and on the job page
+- Real CV/resume upload via Firebase Storage (sign-up, profile, apply
+  modal) with owner-only Storage rules
+- Server-side search: exact filters as Firestore queries, cursor
+  pagination on `GET /jobs`, offset pagination on search
+- Real dashboard numbers: employer dashboard reads real applications
+  (no simulated figures), with date filters and a status breakdown;
+  jobseeker dashboard counts Applications / Interviews / Offers /
+  Rejected from real records
+- RBAC completion: role from Firestore everywhere (no localStorage),
+  `/post-job` guarded to employer/admin, `POST /jobs` restricted to
+  employer/admin server-side
+- Minimal employer verification: a `verified` flag on the company,
+  settable only by an admin from Admin Panel → Companies; a Verified
+  badge shows on the company profile and job listings
+
+### Planned (later phases)
+- Phase 3: engineering quality — validation, authorization, error handling, tests, API documentation
+- Phase 4: deployment
+- Phase 5: AI features (job assistant: CV vs job description, skill gaps, interview questions)
+- Phase 6: presentation — screenshots, architecture diagram, setup guide, live demo in README

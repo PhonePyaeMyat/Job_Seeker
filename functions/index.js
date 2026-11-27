@@ -44,7 +44,7 @@ app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Vary', 'Origin');
   }
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   next();
 });
@@ -93,12 +93,43 @@ async function requireAdmin(req, res, next) {
   return res.status(403).json({ error: 'Admin access required' });
 }
 
+/**
+ * True when the caller may post jobs: an employer or an admin. Jobseekers
+ * cannot post jobs — posting is an employer action, enforced here as well
+ * as by the /post-job route guard in the frontend.
+ * @param {object} user The decoded ID token.
+ * @return {Promise<boolean>} Whether the user may post jobs.
+ */
+async function canPostJobs(user) {
+  if (!user) return false;
+  if (await isAdminUser(user)) return true;
+  const userDoc = await db.collection('users').doc(user.uid).get();
+  return userDoc.exists && userDoc.data().role === 'employer';
+}
+
+/**
+ * Convert an application document to JSON, turning the appliedAt
+ * Timestamp into an ISO string the frontend can display and compare.
+ * @param {object} data The application document data.
+ * @return {object} The application as plain JSON.
+ */
+function toApplicationJson(data) {
+  const appliedAt = data.appliedAt;
+  return {
+    ...data,
+    appliedAt: appliedAt && typeof appliedAt.toDate === 'function'
+      ? appliedAt.toDate().toISOString()
+      : (appliedAt || null),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Validation
 // ---------------------------------------------------------------------------
 
 const JOB_TYPES = ['FULL_TIME', 'PART_TIME', 'CONTRACT', 'INTERNSHIP', 'REMOTE', 'TEMPORARY'];
 const EXPERIENCE_LEVELS = ['ENTRY', 'MID', 'SENIOR'];
+const APPLICATION_STATUSES = ['pending', 'interview', 'offer', 'rejected'];
 
 function isNonEmptyString(value, max = 5000) {
   return typeof value === 'string' && value.trim().length > 0 && value.length <= max;
@@ -180,9 +211,13 @@ function parseSalaryNumbers(salary) {
 // Jobs
 // ---------------------------------------------------------------------------
 
-// Create a new job (authenticated; server stamps ownership and metadata)
+// Create a new job (employer or admin only; server stamps ownership
+// and metadata)
 app.post('/jobs', requireAuth, async (req, res) => {
   try {
+    if (!(await canPostJobs(req.user))) {
+      return res.status(403).json({ error: 'Only employers and admins can post jobs' });
+    }
     const errors = validateJobInput(req.body);
     if (errors.length > 0) {
       return res.status(400).json({ error: 'Invalid job data', details: errors });
@@ -206,25 +241,33 @@ app.post('/jobs', requireAuth, async (req, res) => {
   }
 });
 
-// Get all jobs
+// Get jobs, newest first, with cursor pagination. The cursor is the
+// postedDate of the last job on the previous page (see nextCursor in the
+// response). Two jobs posted in the same millisecond share a postedDate,
+// so a page boundary can in principle skip one — acceptable for this app,
+// and the total (from a count aggregation) stays correct.
 app.get('/jobs', async (req, res) => {
   try {
-    const { page = 0, size = 10 } = req.query;
-    const pageNum = parseInt(page, 10) || 0;
-    const pageSize = parseInt(size, 10) || 10;
+    const { size = 10, cursor = '' } = req.query;
+    const pageSize = Math.min(Math.max(parseInt(size, 10) || 10, 1), 50);
 
-    const snapshot = await jobsCollection.get();
-    const allJobs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    let q = jobsCollection.orderBy('postedDate', 'desc').limit(pageSize);
+    if (cursor) q = q.startAfter(cursor);
 
-    // Pagination
-    const start = pageNum * pageSize;
-    const paginatedJobs = allJobs.slice(start, start + pageSize);
+    const [snapshot, countSnap] = await Promise.all([
+      q.get(),
+      jobsCollection.count().get(),
+    ]);
+    const jobs = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const nextCursor = jobs.length === pageSize
+      ? (jobs[jobs.length - 1].postedDate || null)
+      : null;
 
     res.json({
-      jobs: paginatedJobs,
-      total: allJobs.length,
-      page: pageNum,
+      jobs,
+      total: countSnap.data().count,
       size: pageSize,
+      nextCursor,
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -234,6 +277,12 @@ app.get('/jobs', async (req, res) => {
 // Search jobs with filters and pagination.
 // NOTE: registered BEFORE /jobs/:id — Express matches routes in order, and
 // /jobs/:id would otherwise swallow /jobs/search as a job-ID lookup (404).
+//
+// Exact-match filters (type, experienceLevel, datePosted) run as Firestore
+// queries; substring filters (keyword, company, location, salary, remote)
+// cannot — Firestore has no substring search — so they run in memory over
+// the bounded, server-filtered set. The fetch is capped at 500 documents
+// so an unfiltered search cannot pull an unbounded collection.
 app.get('/jobs/search', async (req, res) => {
   try {
     const {
@@ -249,29 +298,36 @@ app.get('/jobs/search', async (req, res) => {
       size = 10,
     } = req.query;
 
-    // Get all jobs first, then filter in memory to avoid Firestore index issues
-    const snapshot = await jobsCollection.get();
-    let jobs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    let q = jobsCollection;
+    if (type) q = q.where('type', '==', type);
+    if (experience) {
+      const wanted = experience.toUpperCase() === 'EXECUTIVE'
+        ? 'SENIOR'
+        : experience.toUpperCase();
+      q = q.where('experienceLevel', '==', wanted);
+    }
+    if (datePosted) {
+      const days = parseInt(datePosted, 10);
+      if (!Number.isNaN(days)) {
+        const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+        q = q.where('postedDate', '>=', cutoff.toISOString());
+      }
+    }
+    q = q.orderBy('postedDate', 'desc').limit(500);
+
+    const snapshot = await q.get();
+    let jobs = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
 
     if (location) {
-      jobs = jobs.filter(job => job.location && job.location.toLowerCase().includes(location.toLowerCase()));
-    }
-
-    if (type) {
-      jobs = jobs.filter(job => job.type === type);
+      jobs = jobs.filter((job) => job.location && job.location.toLowerCase().includes(location.toLowerCase()));
     }
 
     if (company) {
-      jobs = jobs.filter(job => job.company && job.company.toLowerCase().includes(company.toLowerCase()));
-    }
-
-    if (experience) {
-      const wanted = experience.toUpperCase() === 'EXECUTIVE' ? 'SENIOR' : experience.toUpperCase();
-      jobs = jobs.filter(job => (job.experienceLevel || '').toUpperCase() === wanted);
+      jobs = jobs.filter((job) => job.company && job.company.toLowerCase().includes(company.toLowerCase()));
     }
 
     if (remote === 'true' || remote === true) {
-      jobs = jobs.filter(job =>
+      jobs = jobs.filter((job) =>
         (job.location && job.location.toLowerCase().includes('remote')) || job.type === 'REMOTE');
     }
 
@@ -280,31 +336,23 @@ app.get('/jobs/search', async (req, res) => {
       const [filterMin, filterMax] = salary.endsWith('+')
         ? [parseInt(salary, 10), Infinity]
         : salary.split('-').map((n) => parseInt(n, 10));
-      jobs = jobs.filter(job => {
+      jobs = jobs.filter((job) => {
         const range = parseSalaryNumbers(job.salary);
         if (!range) return false;
         return range[1] >= filterMin && range[0] <= filterMax;
       });
     }
 
-    if (datePosted) {
-      const days = parseInt(datePosted, 10);
-      if (!Number.isNaN(days)) {
-        const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
-        jobs = jobs.filter(job => job.postedDate && new Date(job.postedDate).getTime() >= cutoff);
-      }
-    }
-
     if (keyword) {
       const lowerKeyword = keyword.toLowerCase();
-      jobs = jobs.filter(job =>
+      jobs = jobs.filter((job) =>
         (job.title && job.title.toLowerCase().includes(lowerKeyword)) ||
         (job.description && job.description.toLowerCase().includes(lowerKeyword)) ||
         (job.company && job.company.toLowerCase().includes(lowerKeyword)),
       );
     }
 
-    // Pagination
+    // Pagination over the filtered set (bounded by the 500-document cap).
     const pageNum = parseInt(page, 10) || 0;
     const pageSize = parseInt(size, 10) || 10;
     const start = pageNum * pageSize;
@@ -336,7 +384,7 @@ app.get('/jobs/greenhouse/:boardToken', async (req, res) => {
     const greenhouseJobs = response.data.jobs || [];
 
     // Map jobs to your format (without storing)
-    const mappedJobs = greenhouseJobs.map(greenhouseJob => ({
+    const mappedJobs = greenhouseJobs.map((greenhouseJob) => ({
       id: `gh_${greenhouseJob.id}`, // Prefix to distinguish from Firestore jobs
       title: greenhouseJob.title || '',
       company: greenhouseJob.departments?.[0]?.name || 'Unknown',
@@ -553,6 +601,101 @@ app.post('/jobs/:id/apply', requireAuth, async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Applications — status pipeline
+// ---------------------------------------------------------------------------
+
+// List the applications for one job (job poster or admin only), newest
+// first. Used by the employer dashboard's per-job application view.
+app.get('/jobs/:id/applications', requireAuth, async (req, res) => {
+  try {
+    const jobDoc = await jobsCollection.doc(req.params.id).get();
+    if (!jobDoc.exists) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+    const admin = await isAdminUser(req.user);
+    if (jobDoc.data().postedBy !== req.user.uid && !admin) {
+      return res.status(403).json({ error: 'Only the job poster or an admin can view applications' });
+    }
+    const snapshot = await applicationsCollection
+      .where('jobId', '==', req.params.id).get();
+    const applications = snapshot.docs
+      .map((d) => ({ id: d.id, ...toApplicationJson(d.data()) }))
+      .sort((a, b) => new Date(b.appliedAt || 0) - new Date(a.appliedAt || 0));
+    res.json({ applications, total: applications.length });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// List all applications for jobs posted by the caller, newest first, with
+// counts by status. Optional ?status=, ?from= and ?to= (ISO dates) narrow
+// the set — the employer dashboard's date filter uses them. Applications
+// written before Phase 1 have no companyId and are not returned here;
+// the per-job endpoint above still finds them.
+app.get('/applications/employer', requireAuth, async (req, res) => {
+  try {
+    const { status = '', from = '', to = '' } = req.query;
+    const snapshot = await applicationsCollection
+      .where('companyId', '==', req.user.uid).get();
+    let applications = snapshot.docs
+      .map((d) => ({ id: d.id, ...toApplicationJson(d.data()) }))
+      .sort((a, b) => new Date(b.appliedAt || 0) - new Date(a.appliedAt || 0));
+    if (status) {
+      applications = applications.filter((a) => a.status === status);
+    }
+    if (from) {
+      const fromTime = new Date(from).getTime();
+      if (!Number.isNaN(fromTime)) {
+        applications = applications.filter(
+          (a) => new Date(a.appliedAt || 0).getTime() >= fromTime);
+      }
+    }
+    if (to) {
+      const toTime = new Date(to).getTime();
+      if (!Number.isNaN(toTime)) {
+        applications = applications.filter(
+          (a) => new Date(a.appliedAt || 0).getTime() <= toTime);
+      }
+    }
+    const counts = { pending: 0, interview: 0, offer: 0, rejected: 0 };
+    for (const a of applications) {
+      if (counts[a.status] !== undefined) counts[a.status] += 1;
+    }
+    res.json({ applications, total: applications.length, counts });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Change an application's status (job poster or admin only). Only the
+// status field may change — the Firestore rules enforce the same, so a
+// caller cannot smuggle any other field through here.
+app.patch('/applications/:id/status', requireAuth, async (req, res) => {
+  try {
+    const { status } = req.body;
+    if (!APPLICATION_STATUSES.includes(status)) {
+      return res.status(400).json({ error: 'Invalid status' });
+    }
+    const appRef = applicationsCollection.doc(req.params.id);
+    const appDoc = await appRef.get();
+    if (!appDoc.exists) {
+      return res.status(404).json({ error: 'Application not found' });
+    }
+    const application = appDoc.data();
+    const jobDoc = await jobsCollection.doc(application.jobId).get();
+    const admin = await isAdminUser(req.user);
+    if ((!jobDoc.exists || jobDoc.data().postedBy !== req.user.uid) && !admin) {
+      return res.status(403).json({ error: 'Only the job poster or an admin can change the status' });
+    }
+    await appRef.update({ status });
+    const updated = await appRef.get();
+    res.json({ id: updated.id, ...toApplicationJson(updated.data()) });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Helper function to map Greenhouse job type
 function mapGreenhouseJobType(greenhouseJob) {
   // You can customize this mapping based on your needs
@@ -593,7 +736,7 @@ function extractSkills(content) {
   const foundSkills = [];
   const lowerContent = (content || '').toLowerCase();
 
-  commonSkills.forEach(skill => {
+  commonSkills.forEach((skill) => {
     if (lowerContent.includes(skill.toLowerCase())) {
       foundSkills.push(skill);
     }
