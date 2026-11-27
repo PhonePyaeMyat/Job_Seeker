@@ -1,384 +1,336 @@
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import { auth, db } from '../firebaseConfig';
 import { useAuthState } from 'react-firebase-hooks/auth';
-import { auth } from '../firebaseConfig';
-import { getDoc, doc } from 'firebase/firestore';
-import { db } from '../firebaseConfig';
-import { Link, useNavigate } from 'react-router-dom';
-import JobCard from '../components/JobCard';
-import { getUserApplications, getJobById, Application, Job } from '../services/jobService';
+import { collection, query, where, getDocs, doc, getDoc, deleteDoc } from 'firebase/firestore';
+import { getUserApplications, Job, Application, APPLICATION_STATUS_LABELS, ApplicationStatus } from '../services/jobService';
+
+interface SavedJob {
+  id: string;
+  jobId: string;
+  userId: string;
+  savedAt: any;
+  job?: Job;
+}
 
 interface AppliedEntry {
   application: Application;
-  job: Job;
+  job?: Job;
 }
 
-const STATUS_LABELS: Record<Application['status'], { label: string; classes: string }> = {
-  pending: { label: 'Pending', classes: 'bg-yellow-100 text-yellow-800' },
-  interview: { label: 'Interview', classes: 'bg-blue-100 text-blue-800' },
-  offer: { label: 'Offer', classes: 'bg-green-100 text-green-800' },
-  rejected: { label: 'Rejected', classes: 'bg-red-100 text-red-800' },
+const STATUS_BADGE: Record<ApplicationStatus, string> = {
+  pending: 'bg-yellow-100 text-yellow-800',
+  interview: 'bg-blue-100 text-blue-800',
+  offer: 'bg-green-100 text-green-800',
+  rejected: 'bg-red-100 text-red-800',
 };
 
 const JobSeekerDashboard: React.FC = () => {
   const [user] = useAuthState(auth);
-  const navigate = useNavigate();
-  // Applications are the single source of truth for "applied": each entry
-  // carries the real appliedAt timestamp and the current status. The job's
-  // applicants array is only a membership list, not application data.
+  const [savedJobs, setSavedJobs] = useState<SavedJob[]>([]);
   const [appliedEntries, setAppliedEntries] = useState<AppliedEntry[]>([]);
-  const [savedJobs, setSavedJobs] = useState<Job[]>([]);
-  const [savedJobIds, setSavedJobIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'applied' | 'saved'>('applied');
+  const [error, setError] = useState('');
+  const [activeTab, setActiveTab] = useState<'saved' | 'applied'>('saved');
+  const [statusFilter, setStatusFilter] = useState<'all' | ApplicationStatus>('all');
 
   useEffect(() => {
-    const fetchDashboardData = async () => {
-      if (!user) {
-        setLoading(false);
-        return;
-      }
-
-      try {
-        setLoading(true);
-        setError(null);
-
-        await Promise.all([
-          fetchApplications(),
-          fetchSavedJobs(),
-        ]);
-      } catch (err: any) {
-        console.error('Error fetching dashboard data:', err);
-        setError('Failed to load dashboard data');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchDashboardData();
+    if (user) {
+      loadDashboardData();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
-  const fetchApplications = async () => {
+  const loadDashboardData = async () => {
     if (!user) return;
 
     try {
+      setLoading(true);
+      // Load saved jobs
+      const savedJobsQuery = query(
+        collection(db, 'savedJobs'),
+        where('userId', '==', user.uid)
+      );
+      const savedJobsSnapshot = await getDocs(savedJobsQuery);
+      const savedJobsData = savedJobsSnapshot.docs.map((docSnapshot) => ({
+        id: docSnapshot.id,
+        ...docSnapshot.data(),
+      })) as SavedJob[];
+
+      // Fetch job details for saved jobs
+      for (const savedJob of savedJobsData) {
+        try {
+          const jobDoc = await getDoc(doc(db, 'jobs', savedJob.jobId));
+          if (jobDoc.exists()) {
+            savedJob.job = { id: jobDoc.id, ...jobDoc.data() } as Job;
+          }
+        } catch (err) {
+          console.error('Error fetching job details:', err);
+        }
+      }
+
+      setSavedJobs(savedJobsData);
+
+      // Load applied jobs — one application record per job, with its real
+      // status (pending / interview / offer / rejected) and real applied
+      // date. The job's posted date is shown separately.
       const applications = await getUserApplications(user.uid);
       const entries: AppliedEntry[] = [];
       for (const application of applications) {
+        let job: Job | undefined;
         try {
-          const job = await getJobById(application.jobId);
-          entries.push({ application, job });
+          const jobDoc = await getDoc(doc(db, 'jobs', application.jobId));
+          if (jobDoc.exists()) {
+            job = { id: jobDoc.id, ...jobDoc.data() } as Job;
+          }
         } catch (err) {
-          // The job was deleted; skip it rather than breaking the dashboard.
-          console.warn(`Failed to load job ${application.jobId}:`, err);
+          console.error('Error fetching job details:', err);
         }
+        entries.push({ application, job });
       }
       setAppliedEntries(entries);
     } catch (err: any) {
-      console.error('Error fetching applications:', err);
-      throw err;
+      setError(err.message || 'Failed to load dashboard data');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const fetchSavedJobs = async () => {
-    if (!user) return;
-
+  const handleUnsaveJob = async (savedJobId: string) => {
     try {
-      // Get user's saved job IDs from their profile
-      const userDoc = await getDoc(doc(db, 'users', user.uid));
-      if (userDoc.exists()) {
-        const userData = userDoc.data();
-        const savedIds = userData.savedJobs || [];
-        setSavedJobIds(savedIds);
-
-        if (savedIds.length > 0) {
-          // Get the actual job data for saved jobs
-          const jobs: Job[] = [];
-
-          for (const jobId of savedIds) {
-            try {
-              const jobDoc = await getDoc(doc(db, 'jobs', jobId));
-              if (jobDoc.exists()) {
-                jobs.push({
-                  id: jobDoc.id,
-                  ...jobDoc.data(),
-                } as Job);
-              }
-            } catch (err) {
-              console.warn(`Failed to load job ${jobId}:`, err);
-            }
-          }
-
-          setSavedJobs(jobs);
-        } else {
-          setSavedJobs([]);
-        }
-      } else {
-        setSavedJobs([]);
-        setSavedJobIds([]);
-      }
+      await deleteDoc(doc(db, 'savedJobs', savedJobId));
+      setSavedJobs(savedJobs.filter(job => job.id !== savedJobId));
     } catch (err: any) {
-      console.error('Error fetching saved jobs:', err);
-      throw err;
+      setError(err.message || 'Failed to unsave job');
     }
   };
 
-  const handleSaveChange = async (jobId: string, isSaved: boolean) => {
-    if (isSaved) {
-      setSavedJobIds(prev => [...prev, jobId]);
-      // Find job in applied jobs list or fetch from Firestore
-      let jobToAdd = appliedEntries.find(e => e.job.id === jobId)?.job;
-
-      if (!jobToAdd) {
-        try {
-          const jobDoc = await getDoc(doc(db, 'jobs', jobId));
-          if (jobDoc.exists()) {
-            jobToAdd = {
-              id: jobDoc.id,
-              ...jobDoc.data(),
-            } as Job;
-          }
-        } catch (error) {
-          console.error('Error fetching job details:', error);
-        }
-      }
-
-      if (jobToAdd) {
-        setSavedJobs(prev => {
-          const exists = prev.some(job => job.id === jobId);
-          return exists ? prev : [...prev, jobToAdd!];
-        });
-      }
-    } else {
-      setSavedJobIds(prev => prev.filter(id => id !== jobId));
-      setSavedJobs(prev => prev.filter(job => job.id !== jobId));
+  const formatDate = (date: any) => {
+    if (!date) return 'Unknown date';
+    if (date.toDate) {
+      return date.toDate().toLocaleDateString();
     }
-
-    // Refresh saved jobs from database to ensure consistency
-    setTimeout(() => {
-      fetchSavedJobs();
-    }, 100);
+    return new Date(date).toLocaleDateString();
   };
 
-  const handleApply = async (jobId: string) => {
-    if (!user) {
-      alert('Please log in to apply for jobs');
-      return;
-    }
-
-    try {
-      // Use the service function to apply to the job. This creates a real
-      // application record (and updates the job's applicants array).
-      const { applyToJob } = await import('../services/jobService');
-      await applyToJob(jobId, user.uid);
-
-      // Refresh the applications list
-      await fetchApplications();
-
-      alert('Application submitted successfully!');
-    } catch (error) {
-      console.error('Error applying to job:', error);
-      alert('Failed to apply to job. Please try again.');
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'pending':
+        return 'bg-yellow-100 text-yellow-800';
+      case 'interview':
+        return 'bg-blue-100 text-blue-800';
+      case 'offer':
+        return 'bg-green-100 text-green-800';
+      case 'rejected':
+        return 'bg-red-100 text-red-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
     }
   };
 
-  const handleViewMore = (jobId: string) => {
-    navigate(`/jobs/${jobId}`);
-  };
+  // Counts are real: they come from the application records, not estimates.
+  const applicationCount = appliedEntries.length;
+  const interviewCount = appliedEntries.filter((e) => e.application.status === 'interview').length;
+  const offerCount = appliedEntries.filter((e) => e.application.status === 'offer').length;
+  const rejectedCount = appliedEntries.filter((e) => e.application.status === 'rejected').length;
+  const visibleApplied = statusFilter === 'all'
+    ? appliedEntries
+    : appliedEntries.filter((e) => e.application.status === statusFilter);
 
-  const interviewCount = appliedEntries.filter(e => e.application.status === 'interview').length;
-  const offerCount = appliedEntries.filter(e => e.application.status === 'offer').length;
-
-  if (!user) {
-    return (
-      <div className="max-w-2xl mx-auto mt-10 p-6 bg-white rounded shadow">
-        <h2 className="text-2xl font-bold mb-4">Please log in to view your dashboard</h2>
-      </div>
-    );
+  if (loading) {
+    return <div className="text-center py-8">Loading dashboard...</div>;
   }
 
   return (
-    <div className="max-w-6xl mx-auto mt-10 p-6">
-      <h2 className="text-2xl font-bold mb-6">Job Seeker Dashboard</h2>
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <h1 className="text-3xl font-bold mb-8">My Dashboard</h1>
 
-      {/* User Info Section */}
-      <div className="mb-8 p-4 bg-blue-50 rounded">
-        <h3 className="font-semibold mb-2">Welcome back!</h3>
-        <p className="text-gray-700">Email: {user.email}</p>
+      {error && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-6">
+          {error}
+        </div>
+      )}
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6 mb-8">
+        <div className="bg-white p-6 rounded-lg shadow">
+          <h3 className="text-lg font-semibold text-gray-700">Applications</h3>
+          <p className="text-3xl font-bold text-blue-600">{applicationCount}</p>
+          <p className="text-sm text-gray-500">Total applied</p>
+        </div>
+        <div className="bg-white p-6 rounded-lg shadow">
+          <h3 className="text-lg font-semibold text-gray-700">Interviews</h3>
+          <p className="text-3xl font-bold text-green-600">{interviewCount}</p>
+          <p className="text-sm text-gray-500">In interview stage</p>
+        </div>
+        <div className="bg-white p-6 rounded-lg shadow">
+          <h3 className="text-lg font-semibold text-gray-700">Offers</h3>
+          <p className="text-3xl font-bold text-purple-600">{offerCount}</p>
+          <p className="text-sm text-gray-500">Offers received</p>
+        </div>
+        <div className="bg-white p-6 rounded-lg shadow">
+          <h3 className="text-lg font-semibold text-gray-700">Rejected</h3>
+          <p className="text-3xl font-bold text-red-600">{rejectedCount}</p>
+          <p className="text-sm text-gray-500">Not successful</p>
+        </div>
+        <div className="bg-white p-6 rounded-lg shadow">
+          <h3 className="text-lg font-semibold text-gray-700">Saved Jobs</h3>
+          <p className="text-3xl font-bold text-orange-600">{savedJobs.length}</p>
+          <p className="text-sm text-gray-500">Jobs saved</p>
+        </div>
       </div>
 
       {/* Tabs */}
-      <div className="bg-white rounded-lg shadow-sm mb-6">
-        <div className="border-b border-gray-200">
-          <nav className="-mb-px flex space-x-8 px-6">
-            {[
-              { id: 'applied', label: 'Applied Jobs', count: appliedEntries.length },
-              { id: 'saved', label: 'Saved Jobs', count: savedJobs.length },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
-                className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                  activeTab === tab.id
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                {tab.label} ({tab.count})
-              </button>
-            ))}
+      <div className="bg-white rounded-lg shadow">
+        <div className="border-b">
+          <nav className="flex space-x-8 px-6">
+            <button
+              onClick={() => setActiveTab('saved')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'saved'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Saved Jobs ({savedJobs.length})
+            </button>
+            <button
+              onClick={() => setActiveTab('applied')}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'applied'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Applied Jobs ({applicationCount})
+            </button>
           </nav>
         </div>
 
-        {/* Tab Content */}
         <div className="p-6">
-          {loading ? (
-            <div className="flex justify-center items-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-              <span className="ml-2">Loading...</span>
-            </div>
-          ) : error ? (
-            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-              {error}
-            </div>
+          {activeTab === 'saved' ? (
+            savedJobs.length === 0 ? (
+              <div className="text-center py-8">
+                <p className="text-gray-500">You haven't saved any jobs yet.</p>
+                <Link
+                  to="/jobs"
+                  className="mt-4 inline-block bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+                >
+                  Browse Jobs
+                </Link>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {savedJobs.map((savedJob) => (
+                  <div key={savedJob.id} className="border rounded-lg p-4 flex justify-between items-start">
+                    <div>
+                      <Link
+                        to={`/jobs/${savedJob.jobId}`}
+                        className="text-lg font-semibold text-blue-600 hover:underline"
+                      >
+                        {savedJob.job?.title || 'Job not found'}
+                      </Link>
+                      <p className="text-gray-600">
+                        {savedJob.job?.company} • {savedJob.job?.location}
+                      </p>
+                      <p className="text-sm text-gray-500">
+                        {savedJob.job?.type} • {savedJob.job?.salary}
+                      </p>
+                      <p className="text-sm text-gray-400">
+                        Saved on {formatDate(savedJob.savedAt)}
+                      </p>
+                    </div>
+                    <div className="flex space-x-2">
+                      <Link
+                        to={`/jobs/${savedJob.jobId}`}
+                        className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700"
+                      >
+                        View
+                      </Link>
+                      <button
+                        onClick={() => handleUnsaveJob(savedJob.id)}
+                        className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700"
+                      >
+                        Unsave
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
           ) : (
             <>
-              {activeTab === 'applied' && (
-                <div>
-                  <h3 className="text-xl font-semibold mb-4">Applied Jobs ({appliedEntries.length})</h3>
-                  {appliedEntries.length === 0 ? (
-                    <div className="bg-gray-100 p-6 rounded text-center">
-                      <p className="text-gray-600 mb-4">You haven't applied to any jobs yet.</p>
-                      <Link
-                        to="/"
-                        className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
-                      >
-                        Browse Jobs
-                      </Link>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {appliedEntries.map(({ application, job }) => {
-                        const status = STATUS_LABELS[application.status] || STATUS_LABELS.pending;
-                        return (
-                          <div key={application.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
-                            <div className="flex justify-between items-start">
-                              <div className="flex-1">
-                                <h4 className="text-lg font-semibold text-gray-800">
-                                  <Link to={`/jobs/${job.id}`} className="hover:text-blue-600">
-                                    {job.title}
-                                  </Link>
-                                </h4>
-                                <p className="text-gray-600">{job.company}</p>
-                                <p className="text-gray-500 text-sm">{job.location}</p>
-                              </div>
-                              <div className="text-right">
-                                <span className={`inline-block text-xs font-medium px-2 py-1 rounded ${status.classes}`}>
-                                  {status.label}
-                                </span>
-                                <span className="inline-block bg-blue-100 text-blue-800 text-xs font-medium px-2 py-1 rounded ml-2">
-                                  {job.type}
-                                </span>
-                                {job.salary && (
-                                  <p className="text-sm text-gray-600 mt-1">{job.salary}</p>
-                                )}
-                              </div>
-                            </div>
-                            <p className="text-gray-600 mt-2 line-clamp-2">{job.description}</p>
-                            <div className="mt-3 flex justify-between items-center">
-                              <span className="text-sm text-gray-500">
-                                Applied on {application.appliedAt
-                                  ? new Date(application.appliedAt).toLocaleDateString()
-                                  : 'Unknown date'}
-                              </span>
-                              <Link
-                                to={`/jobs/${job.id}`}
-                                className="text-blue-600 hover:text-blue-800 text-sm font-medium"
-                              >
-                                View Details →
-                              </Link>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
+              <div className="mb-4 flex items-center gap-2">
+                <label htmlFor="appliedStatusFilter" className="text-sm text-gray-600">Filter by status</label>
+                <select
+                  id="appliedStatusFilter"
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value as 'all' | ApplicationStatus)}
+                  className="border rounded px-2 py-1 text-sm"
+                >
+                  <option value="all">All statuses</option>
+                  {(Object.keys(APPLICATION_STATUS_LABELS) as ApplicationStatus[]).map((s) => (
+                    <option key={s} value={s}>{APPLICATION_STATUS_LABELS[s]}</option>
+                  ))}
+                </select>
+              </div>
+              {visibleApplied.length === 0 ? (
+                <div className="text-center py-8">
+                  <p className="text-gray-500">
+                    {statusFilter === 'all'
+                      ? "You haven't applied to any jobs yet."
+                      : `No applications with status ${APPLICATION_STATUS_LABELS[statusFilter]}.`}
+                  </p>
+                  <Link
+                    to="/jobs"
+                    className="mt-4 inline-block bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+                  >
+                    Browse Jobs
+                  </Link>
                 </div>
-              )}
-
-              {activeTab === 'saved' && (
-                <div>
-                  <h3 className="text-xl font-semibold mb-4">Saved Jobs ({savedJobs.length})</h3>
-                  {savedJobs.length === 0 ? (
-                    <div className="bg-gray-100 p-6 rounded text-center">
-                      <p className="text-gray-600 mb-4">You haven't saved any jobs yet.</p>
-                      <Link
-                        to="/"
-                        className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
-                      >
-                        Browse Jobs
-                      </Link>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {savedJobs.map(job => (
-                        <div key={job.id}>
-                          <JobCard
-                            job={job}
-                            onApply={handleApply}
-                            onViewMore={handleViewMore}
-                            isSaved={savedJobIds.includes(job.id)}
-                            onSaveChange={handleSaveChange}
-                          />
+              ) : (
+                <div className="space-y-4">
+                  {visibleApplied.map(({ application, job }) => (
+                    <div key={application.id} className="border rounded-lg p-4">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <Link
+                            to={`/jobs/${application.jobId}`}
+                            className="text-lg font-semibold text-blue-600 hover:underline"
+                          >
+                            {job?.title || application.jobTitle}
+                          </Link>
+                          <p className="text-gray-600">
+                            {job?.company || application.companyName} • {job?.location}
+                          </p>
+                          <p className="text-sm text-gray-500">
+                            {job?.type} • {job?.salary}
+                          </p>
+                          <p className="text-sm text-gray-500">
+                            Applied on {formatDate(application.appliedAt)}
+                            {job?.postedDate && ` • Job posted on ${formatDate(job.postedDate)}`}
+                          </p>
+                          {application.cvFile?.url && (
+                            <a
+                              href={application.cvFile.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-sm text-blue-600 hover:underline"
+                            >
+                              View submitted CV ({application.cvFile.name})
+                            </a>
+                          )}
                         </div>
-                      ))}
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${STATUS_BADGE[application.status] || getStatusColor(application.status)}`}>
+                          {APPLICATION_STATUS_LABELS[application.status] || application.status}
+                        </span>
+                      </div>
                     </div>
-                  )}
+                  ))}
                 </div>
               )}
             </>
           )}
-        </div>
-      </div>
-
-      {/* Quick Stats — all counts are derived from real application records. */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-8">
-        <div className="bg-blue-50 p-4 rounded">
-          <h4 className="font-semibold text-blue-800">Applications</h4>
-          <p className="text-2xl font-bold text-blue-600">{appliedEntries.length}</p>
-        </div>
-        <div className="bg-indigo-50 p-4 rounded">
-          <h4 className="font-semibold text-indigo-800">Interviews</h4>
-          <p className="text-2xl font-bold text-indigo-600">{interviewCount}</p>
-        </div>
-        <div className="bg-green-50 p-4 rounded">
-          <h4 className="font-semibold text-green-800">Offers</h4>
-          <p className="text-2xl font-bold text-green-600">{offerCount}</p>
-        </div>
-        <div className="bg-yellow-50 p-4 rounded">
-          <h4 className="font-semibold text-yellow-800">Saved Jobs</h4>
-          <p className="text-2xl font-bold text-yellow-600">{savedJobs.length}</p>
-          <p className="text-xs text-gray-500">Bookmarked jobs</p>
-        </div>
-      </div>
-
-      {/* Quick Actions */}
-      <div className="mt-8 p-4 bg-gray-50 rounded">
-        <h3 className="font-semibold mb-3">Quick Actions</h3>
-        <div className="flex flex-wrap gap-3">
-          <Link
-            to="/"
-            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
-          >
-            Browse More Jobs
-          </Link>
-          <Link
-            to="/profile"
-            className="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 transition-colors"
-          >
-            Update Profile
-          </Link>
         </div>
       </div>
     </div>

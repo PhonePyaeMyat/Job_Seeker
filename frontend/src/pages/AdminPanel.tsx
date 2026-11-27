@@ -1,33 +1,27 @@
-import React, { useState, useEffect } from 'react';
-import { useAuthState } from 'react-firebase-hooks/auth';
+import React, { useState, useEffect, useCallback } from 'react';
 import { auth, db } from '../firebaseConfig';
-import { 
-  collection, 
-  getDocs, 
-  doc, 
-  updateDoc, 
-  deleteDoc, 
+import { useAuthState } from 'react-firebase-hooks/auth';
+import {
+  collection,
+  getDocs,
+  doc,
+  updateDoc,
+  deleteDoc,
   query,
   orderBy,
   limit,
   startAfter,
-  DocumentSnapshot
+  where,
 } from 'firebase/firestore';
-import { Link } from 'react-router-dom';
-import GreenhouseIntegration from '../components/GreenhouseIntegration';
-import { getUserRole } from '../services/userService';
+import { setCompanyVerified } from '../services/companyService';
 
 interface User {
   id: string;
-  displayName: string;
   email: string;
+  displayName: string;
   role: 'jobseeker' | 'employer' | 'admin';
   createdAt: string;
-  updatedAt: string;
-  bio?: string;
-  location?: string;
   companyName?: string;
-  status: 'active' | 'suspended' | 'pending';
 }
 
 interface Job {
@@ -37,335 +31,339 @@ interface Job {
   location: string;
   type: string;
   salary: string;
-  postedDate: string;
   description: string;
   active: boolean;
+  status: string;
+  postedBy: string;
+  postedDate: string;
   applicants: string[];
-  status: 'approved' | 'pending' | 'rejected';
-  reportCount?: number;
 }
 
-interface AdminStats {
-  totalUsers: number;
-  totalJobs: number;
-  activeJobs: number;
-  pendingJobs: number;
-  totalApplications: number;
-  newUsersThisWeek: number;
-  newJobsThisWeek: number;
+interface CompanyRow {
+  employerId: string;
+  displayName: string;
+  email: string;
+  companyName: string;
+  verified: boolean;
 }
 
 const AdminPanel: React.FC = () => {
-  const [user, userLoading] = useAuthState(auth);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'users' | 'jobs' | 'reports' | 'settings' | 'integrations'>('dashboard');
-  const [loading, setLoading] = useState(true);
+  const [user] = useAuthState(auth);
+  const [activeTab, setActiveTab] = useState<'users' | 'jobs' | 'companies' | 'reports' | 'settings'>('users');
   const [users, setUsers] = useState<User[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [stats, setStats] = useState<AdminStats | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [companies, setCompanies] = useState<CompanyRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedFilter, setSelectedFilter] = useState<string>('all');
-  const [lastDoc, setLastDoc] = useState<DocumentSnapshot | null>(null);
-  const pageSize = 10;
+  const [roleFilter, setRoleFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [lastVisible, setLastVisible] = useState<any>(null);
+  const [hasMore, setHasMore] = useState(true);
 
-  // Admin status comes from the Firestore user document (or the admins
-  // allowlist) via userService — never from the email address, the display
-  // name, or localStorage, all of which the user controls.
-  const [isAdmin, setIsAdmin] = useState(false);
-
-  useEffect(() => {
-    if (!user) {
-      setIsAdmin(false);
-      setLoading(false);
-      return;
-    }
-    let cancelled = false;
-    getUserRole(user.uid).then((role) => {
-      if (cancelled) return;
-      const admin = role === 'admin';
-      setIsAdmin(admin);
-      if (admin) loadInitialData();
-      else setLoading(false);
-    });
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
-
-  const loadInitialData = async () => {
+  const loadInitialData = useCallback(async () => {
     try {
       setLoading(true);
-      await Promise.all([
-        loadUsers(),
-        loadJobs(),
-        loadStats()
-      ]);
+      await Promise.all([loadUsers(), loadJobs(), loadCompanies()]);
     } catch (err: any) {
-      console.error('Error loading admin data:', err);
-      setError('Failed to load admin data');
+      setError(err.message || 'Failed to load admin data');
     } finally {
       setLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (user) {
+      loadInitialData();
+    }
+  }, [user, loadInitialData]);
+
+  const loadUsers = async () => {
+    try {
+      const usersQuery = query(
+        collection(db, 'users'),
+        orderBy('createdAt', 'desc'),
+        limit(50)
+      );
+      const snapshot = await getDocs(usersQuery);
+      const usersData = snapshot.docs.map((docSnapshot) => ({
+        id: docSnapshot.id,
+        ...docSnapshot.data(),
+      })) as User[];
+      setUsers(usersData);
+    } catch (err: any) {
+      console.error('Error loading users:', err);
+      throw err;
+    }
   };
 
-  const loadUsers = async (pageNum = 0, searchQuery = '') => {
+  const loadJobs = async (loadMore = false) => {
     try {
-      let q;
-      if (pageNum === 0) {
-        q = query(
-          collection(db, 'users'),
-          orderBy('createdAt', 'desc'),
-          limit(pageSize)
-        );
-      } else if (lastDoc) {
-        q = query(
-          collection(db, 'users'),
-          orderBy('createdAt', 'desc'),
-          startAfter(lastDoc),
-          limit(pageSize)
+      let jobsQuery;
+      if (loadMore && lastVisible) {
+        jobsQuery = query(
+          collection(db, 'jobs'),
+          orderBy('postedDate', 'desc'),
+          startAfter(lastVisible),
+          limit(20)
         );
       } else {
-        return; // No more pages
+        jobsQuery = query(
+          collection(db, 'jobs'),
+          orderBy('postedDate', 'desc'),
+          limit(20)
+        );
       }
 
-      const snapshot = await getDocs(q);
-      const usersData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        status: doc.data().status || 'active'
-      } as User));
+      const snapshot = await getDocs(jobsQuery);
+      const jobsData = snapshot.docs.map((docSnapshot) => ({
+        id: docSnapshot.id,
+        ...docSnapshot.data(),
+      })) as Job[];
 
-      if (searchQuery) {
-        const filtered = usersData.filter(u => 
-          u.displayName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          u.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          u.companyName?.toLowerCase().includes(searchQuery.toLowerCase())
-        );
-        setUsers(pageNum === 0 ? filtered : [...users, ...filtered]);
+      if (loadMore) {
+        setJobs((prev) => [...prev, ...jobsData]);
       } else {
-        setUsers(pageNum === 0 ? usersData : [...users, ...usersData]);
+        setJobs(jobsData);
       }
 
       if (snapshot.docs.length > 0) {
-        setLastDoc(snapshot.docs[snapshot.docs.length - 1]);
+        setLastVisible(snapshot.docs[snapshot.docs.length - 1]);
       }
-    } catch (err) {
-      console.error('Error loading users:', err);
-      setError('Failed to load users');
-    }
-  };
-
-  const loadJobs = async () => {
-    try {
-      const snapshot = await getDocs(
-        query(collection(db, 'jobs'), orderBy('postedDate', 'desc'))
-      );
-      const jobsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        status: doc.data().status || 'approved',
-        reportCount: doc.data().reportCount || 0
-      } as Job));
-      setJobs(jobsData);
-    } catch (err) {
+      setHasMore(snapshot.docs.length === 20);
+    } catch (err: any) {
       console.error('Error loading jobs:', err);
-      setError('Failed to load jobs');
+      throw err;
     }
   };
 
-  const loadStats = async () => {
+  // Companies: one row per employer account, merged with the companies
+  // document (if any) for the verified flag. Employers who signed up
+  // before company records existed have no document yet — they show as
+  // unverified and verifying them creates the record.
+  const loadCompanies = async () => {
     try {
-      const [usersSnapshot, jobsSnapshot] = await Promise.all([
-        getDocs(collection(db, 'users')),
-        getDocs(collection(db, 'jobs'))
-      ]);
-
-      const allUsers = usersSnapshot.docs.map(doc => ({ 
-        id: doc.id, 
-        ...doc.data(),
-        createdAt: doc.data().createdAt || new Date().toISOString()
-      } as User));
-      const allJobs = jobsSnapshot.docs.map(doc => ({ 
-        id: doc.id, 
-        ...doc.data(),
-        status: doc.data().status || 'approved',
-        active: doc.data().active || false,
-        applicants: doc.data().applicants || []
-      } as Job));
-
-      const oneWeekAgo = new Date();
-      oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-
-      const newUsersThisWeek = allUsers.filter(u => 
-        new Date(u.createdAt) >= oneWeekAgo
-      ).length;
-
-      const newJobsThisWeek = allJobs.filter(j => 
-        new Date(j.postedDate) >= oneWeekAgo
-      ).length;
-
-      const totalApplications = allJobs.reduce((sum, job) => 
-        sum + (job.applicants?.length || 0), 0
+      const employersQuery = query(
+        collection(db, 'users'),
+        where('role', '==', 'employer'),
+        limit(50),
       );
-
-      setStats({
-        totalUsers: allUsers.length,
-        totalJobs: allJobs.length,
-        activeJobs: allJobs.filter(j => j.active).length,
-        pendingJobs: allJobs.filter(j => j.status === 'pending').length,
-        totalApplications,
-        newUsersThisWeek,
-        newJobsThisWeek
+      const employersSnapshot = await getDocs(employersQuery);
+      const companiesSnapshot = await getDocs(collection(db, 'companies'));
+      const verifiedById: Record<string, boolean> = {};
+      const nameById: Record<string, string> = {};
+      companiesSnapshot.docs.forEach((d) => {
+        verifiedById[d.id] = d.data().verified === true;
+        nameById[d.id] = d.data().name || '';
       });
-    } catch (err) {
-      console.error('Error loading stats:', err);
-    }
-  };
-
-  const handleUserAction = async (userId: string, action: 'suspend' | 'activate' | 'delete' | 'promote') => {
-    try {
-      const userRef = doc(db, 'users', userId);
-      
-      switch (action) {
-        case 'suspend':
-          await updateDoc(userRef, { status: 'suspended' });
-          setSuccess('User suspended successfully');
-          break;
-        case 'activate':
-          await updateDoc(userRef, { status: 'active' });
-          setSuccess('User activated successfully');
-          break;
-        case 'delete':
-          if (window.confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
-            await deleteDoc(userRef);
-            setSuccess('User deleted successfully');
-          }
-          break;
-        case 'promote':
-          await updateDoc(userRef, { role: 'admin' });
-          setSuccess('User promoted to admin');
-          break;
-      }
-      
-      // Refresh users list
-      await loadUsers();
-      setTimeout(() => setSuccess(null), 3000);
+      const rows: CompanyRow[] = employersSnapshot.docs.map((d) => {
+        const data = d.data();
+        return {
+          employerId: d.id,
+          displayName: data.displayName || '',
+          email: data.email || '',
+          companyName: nameById[d.id] || data.companyName || '',
+          verified: verifiedById[d.id] || false,
+        };
+      });
+      setCompanies(rows);
     } catch (err: any) {
-      console.error('Error updating user:', err);
-      setError('Failed to update user');
-      setTimeout(() => setError(null), 3000);
+      console.error('Error loading companies:', err);
+      throw err;
     }
   };
 
-  const handleJobAction = async (jobId: string, action: 'approve' | 'reject' | 'delete' | 'feature') => {
+  const handleCompanyVerify = async (row: CompanyRow, verified: boolean) => {
     try {
-      const jobRef = doc(db, 'jobs', jobId);
-      
-      switch (action) {
-        case 'approve':
-          await updateDoc(jobRef, { status: 'approved', active: true });
-          setSuccess('Job approved successfully');
-          break;
-        case 'reject':
-          await updateDoc(jobRef, { status: 'rejected', active: false });
-          setSuccess('Job rejected successfully');
-          break;
-        case 'delete':
-          if (window.confirm('Are you sure you want to delete this job? This action cannot be undone.')) {
-            await deleteDoc(jobRef);
-            setSuccess('Job deleted successfully');
-          }
-          break;
-        case 'feature':
-          await updateDoc(jobRef, { featured: true });
-          setSuccess('Job featured successfully');
-          break;
-      }
-      
-      // Refresh jobs list
-      await loadJobs();
-      setTimeout(() => setSuccess(null), 3000);
+      setError('');
+      setSuccess('');
+      await setCompanyVerified(row.employerId, row.employerId, row.companyName, verified);
+      await loadCompanies();
+      setSuccess(
+        verified
+          ? `${row.companyName || row.email} is now verified.`
+          : `${row.companyName || row.email} is no longer verified.`,
+      );
     } catch (err: any) {
-      console.error('Error updating job:', err);
-      setError('Failed to update job');
-      setTimeout(() => setError(null), 3000);
+      setError(err.message || 'Failed to update verification');
     }
   };
 
-  const filteredUsers = users.filter(user => {
-    if (selectedFilter === 'all') return true;
-    if (selectedFilter === 'jobseekers') return user.role === 'jobseeker';
-    if (selectedFilter === 'employers') return user.role === 'employer';
-    if (selectedFilter === 'suspended') return user.status === 'suspended';
-    return true;
+  const handleRoleChange = async (userId: string, newRole: 'jobseeker' | 'employer' | 'admin') => {
+    try {
+      setError('');
+      setSuccess('');
+      await updateDoc(doc(db, 'users', userId), {
+        role: newRole,
+        updatedAt: new Date().toISOString(),
+      });
+      setUsers((prev) =>
+        prev.map((u) => (u.id === userId ? { ...u, role: newRole } : u))
+      );
+      setSuccess(`User role updated to ${newRole}`);
+    } catch (err: any) {
+      setError(err.message || 'Failed to update user role');
+    }
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    if (!window.confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
+      return;
+    }
+    try {
+      setError('');
+      setSuccess('');
+      await deleteDoc(doc(db, 'users', userId));
+      setUsers((prev) => prev.filter((u) => u.id !== userId));
+      setSuccess('User deleted successfully');
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete user');
+    }
+  };
+
+  const handleJobStatusChange = async (jobId: string, newStatus: string) => {
+    try {
+      setError('');
+      setSuccess('');
+      await updateDoc(doc(db, 'jobs', jobId), {
+        status: newStatus,
+        active: newStatus === 'approved',
+      });
+      setJobs((prev) =>
+        prev.map((job) =>
+          job.id === jobId ? { ...job, status: newStatus, active: newStatus === 'approved' } : job
+        )
+      );
+      setSuccess(`Job status updated to ${newStatus}`);
+    } catch (err: any) {
+      setError(err.message || 'Failed to update job status');
+    }
+  };
+
+  const handleDeleteJob = async (jobId: string) => {
+    if (!window.confirm('Are you sure you want to delete this job? This action cannot be undone.')) {
+      return;
+    }
+    try {
+      setError('');
+      setSuccess('');
+      await deleteDoc(doc(db, 'jobs', jobId));
+      setJobs((prev) => prev.filter((job) => job.id !== jobId));
+      setSuccess('Job deleted successfully');
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete job');
+    }
+  };
+
+  const filteredUsers = users.filter((u) => {
+    const matchesSearch =
+      u.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      u.displayName?.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesRole = roleFilter === 'all' || u.role === roleFilter;
+    return matchesSearch && matchesRole;
   });
 
-  const filteredJobs = jobs.filter(job => {
-    if (selectedFilter === 'all') return true;
-    if (selectedFilter === 'pending') return job.status === 'pending';
-    if (selectedFilter === 'approved') return job.status === 'approved';
-    if (selectedFilter === 'rejected') return job.status === 'rejected';
-    return true;
+  const filteredJobs = jobs.filter((job) => {
+    const matchesSearch =
+      job.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      job.company.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesStatus = statusFilter === 'all' || job.status === statusFilter;
+    return matchesSearch && matchesStatus;
   });
 
-  if (userLoading || loading) {
+  const filteredCompanies = companies.filter((c) => {
+    const term = searchTerm.toLowerCase();
     return (
-      <div className="flex justify-center items-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      </div>
+      c.companyName.toLowerCase().includes(term) ||
+      c.email.toLowerCase().includes(term) ||
+      c.displayName.toLowerCase().includes(term)
     );
-  }
+  });
 
-  if (!user) {
-    return (
-      <div className="max-w-2xl mx-auto mt-10 p-6 bg-white rounded-lg shadow">
-        <h2 className="text-2xl font-bold mb-4">Please log in to access admin panel</h2>
-      </div>
-    );
-  }
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'approved':
+        return 'bg-green-100 text-green-800';
+      case 'pending':
+        return 'bg-yellow-100 text-yellow-800';
+      case 'rejected':
+        return 'bg-red-100 text-red-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
+  };
 
-  if (!isAdmin) {
-    return (
-      <div className="max-w-2xl mx-auto mt-10 p-6 bg-white rounded-lg shadow">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold mb-4 text-red-600">Access Denied</h2>
-          <p className="text-gray-600 mb-4">You don't have permission to access the admin panel.</p>
-          <Link to="/" className="text-blue-600 hover:underline">Go back to home</Link>
-        </div>
-      </div>
-    );
+  const getRoleColor = (role: string) => {
+    switch (role) {
+      case 'admin':
+        return 'bg-red-100 text-red-800';
+      case 'employer':
+        return 'bg-blue-100 text-blue-800';
+      case 'jobseeker':
+        return 'bg-green-100 text-green-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  if (loading) {
+    return <div className="text-center py-8">Loading admin panel...</div>;
   }
 
   return (
-    <div className="max-w-7xl mx-auto mt-10 p-6">
-      {/* Header */}
-      <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">Admin Panel</h1>
-            <p className="text-gray-600">Manage users, jobs, and system settings</p>
-          </div>
-          <div className="text-right">
-            <p className="text-sm text-gray-500">Welcome back,</p>
-            <p className="font-medium">{user.displayName || user.email}</p>
-          </div>
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <h1 className="text-3xl font-bold mb-8">Admin Panel</h1>
+
+      {error && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-6">
+          {error}
+        </div>
+      )}
+
+      {success && (
+        <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-6">
+          {success}
+        </div>
+      )}
+
+      {/* Stats Overview */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <div className="bg-white p-6 rounded-lg shadow">
+          <h3 className="text-lg font-semibold text-gray-700">Total Users</h3>
+          <p className="text-3xl font-bold text-blue-600">{users.length}</p>
+        </div>
+        <div className="bg-white p-6 rounded-lg shadow">
+          <h3 className="text-lg font-semibold text-gray-700">Total Jobs</h3>
+          <p className="text-3xl font-bold text-green-600">{jobs.length}</p>
+        </div>
+        <div className="bg-white p-6 rounded-lg shadow">
+          <h3 className="text-lg font-semibold text-gray-700">Pending Jobs</h3>
+          <p className="text-3xl font-bold text-yellow-600">
+            {jobs.filter((job) => job.status === 'pending').length}
+          </p>
+        </div>
+        <div className="bg-white p-6 rounded-lg shadow">
+          <h3 className="text-lg font-semibold text-gray-700">Verified Companies</h3>
+          <p className="text-3xl font-bold text-purple-600">
+            {companies.filter((c) => c.verified).length}
+          </p>
         </div>
       </div>
 
-      {/* Navigation Tabs */}
-      <div className="bg-white rounded-lg shadow-sm mb-6">
-        <div className="border-b border-gray-200">
-          <nav className="-mb-px flex space-x-8 px-6">
-            {['dashboard', 'users', 'jobs', 'reports', 'integrations', 'settings'].map((tab) => (
+      {/* Tabs */}
+      <div className="bg-white rounded-lg shadow">
+        <div className="border-b">
+          <nav className="flex space-x-8 px-6">
+            {(['users', 'jobs', 'companies', 'reports', 'settings'] as const).map((tab) => (
               <button
                 key={tab}
-                onClick={() => setActiveTab(tab as any)}
+                onClick={() => setActiveTab(tab)}
                 className={`py-4 px-1 border-b-2 font-medium text-sm capitalize ${
                   activeTab === tab
                     ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
                 }`}
               >
                 {tab}
@@ -374,688 +372,336 @@ const AdminPanel: React.FC = () => {
           </nav>
         </div>
 
-        {/* Tab Content */}
         <div className="p-6">
-          {/* Success/Error Messages */}
-          {error && (
-            <div className="mb-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
-              {error}
+          {/* Search and Filters */}
+          {(activeTab === 'users' || activeTab === 'jobs' || activeTab === 'companies') && (
+            <div className="mb-6 flex flex-col sm:flex-row gap-4">
+              <input
+                type="text"
+                placeholder={`Search ${activeTab}...`}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="flex-1 border border-gray-300 rounded-md px-3 py-2"
+              />
+              {activeTab === 'users' && (
+                <select
+                  value={roleFilter}
+                  onChange={(e) => setRoleFilter(e.target.value)}
+                  className="border border-gray-300 rounded-md px-3 py-2"
+                >
+                  <option value="all">All Roles</option>
+                  <option value="jobseeker">Job Seeker</option>
+                  <option value="employer">Employer</option>
+                  <option value="admin">Admin</option>
+                </select>
+              )}
+              {activeTab === 'jobs' && (
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="border border-gray-300 rounded-md px-3 py-2"
+                >
+                  <option value="all">All Statuses</option>
+                  <option value="pending">Pending</option>
+                  <option value="approved">Approved</option>
+                  <option value="rejected">Rejected</option>
+                </select>
+              )}
             </div>
           )}
-          
-          {success && (
-            <div className="mb-6 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg">
-              {success}
+
+          {activeTab === 'users' && (
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      User
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Role
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Joined
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {filteredUsers.map((userData) => (
+                    <tr key={userData.id}>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div>
+                          <div className="text-sm font-medium text-gray-900">
+                            {userData.displayName || 'No name'}
+                          </div>
+                          <div className="text-sm text-gray-500">{userData.email}</div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getRoleColor(userData.role)}`}>
+                          {userData.role}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {userData.createdAt ? new Date(userData.createdAt).toLocaleDateString() : 'Unknown'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        <div className="flex space-x-2">
+                          <select
+                            value={userData.role}
+                            onChange={(e) => handleRoleChange(userData.id, e.target.value as 'jobseeker' | 'employer' | 'admin')}
+                            className="border border-gray-300 rounded px-2 py-1 text-sm"
+                          >
+                            <option value="jobseeker">Job Seeker</option>
+                            <option value="employer">Employer</option>
+                            <option value="admin">Admin</option>
+                          </select>
+                          {userData.id !== user?.uid && (
+                            <button
+                              onClick={() => handleDeleteUser(userData.id)}
+                              className="text-red-600 hover:text-red-900"
+                            >
+                              Delete
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {filteredUsers.length === 0 && (
+                <p className="text-center py-8 text-gray-500">No users found.</p>
+              )}
             </div>
           )}
 
-          {/* Dashboard Tab */}
-          {activeTab === 'dashboard' && (
-            <div className="space-y-6">
-              {/* Stats Cards */}
-              {stats && (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                  <div className="bg-blue-50 p-6 rounded-lg">
-                    <div className="flex items-center">
-                      <div className="flex-1">
-                        <p className="text-blue-600 text-sm font-medium">Total Users</p>
-                        <p className="text-2xl font-bold text-blue-700">{stats.totalUsers}</p>
-                      </div>
-                      <div className="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center">
-                        <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
-                        </svg>
-                      </div>
-                    </div>
-                    <p className="text-blue-600 text-xs mt-1">+{stats.newUsersThisWeek} this week</p>
-                  </div>
-
-                  <div className="bg-green-50 p-6 rounded-lg">
-                    <div className="flex items-center">
-                      <div className="flex-1">
-                        <p className="text-green-600 text-sm font-medium">Total Jobs</p>
-                        <p className="text-2xl font-bold text-green-700">{stats.totalJobs}</p>
-                      </div>
-                      <div className="w-12 h-12 bg-green-600 rounded-full flex items-center justify-center">
-                        <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2-2v2m8 0H8m8 0v2a2 2 0 01-2 2H10a2 2 0 01-2-2V6" />
-                        </svg>
-                      </div>
-                    </div>
-                    <p className="text-green-600 text-xs mt-1">+{stats.newJobsThisWeek} this week</p>
-                  </div>
-
-                  <div className="bg-yellow-50 p-6 rounded-lg">
-                    <div className="flex items-center">
-                      <div className="flex-1">
-                        <p className="text-yellow-600 text-sm font-medium">Pending Jobs</p>
-                        <p className="text-2xl font-bold text-yellow-700">{stats.pendingJobs}</p>
-                      </div>
-                      <div className="w-12 h-12 bg-yellow-600 rounded-full flex items-center justify-center">
-                        <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                      </div>
-                    </div>
-                    <p className="text-yellow-600 text-xs mt-1">Need review</p>
-                  </div>
-
-                  <div className="bg-purple-50 p-6 rounded-lg">
-                    <div className="flex items-center">
-                      <div className="flex-1">
-                        <p className="text-purple-600 text-sm font-medium">Applications</p>
-                        <p className="text-2xl font-bold text-purple-700">{stats.totalApplications}</p>
-                      </div>
-                      <div className="w-12 h-12 bg-purple-600 rounded-full flex items-center justify-center">
-                        <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                      </div>
-                    </div>
-                    <p className="text-purple-600 text-xs mt-1">Total submitted</p>
-                  </div>
+          {activeTab === 'jobs' && (
+            <div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Job
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Status
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Applicants
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Posted
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Actions
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {filteredJobs.map((job) => (
+                      <tr key={job.id}>
+                        <td className="px-6 py-4">
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">{job.title}</div>
+                            <div className="text-sm text-gray-500">{job.company} • {job.location}</div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusColor(job.status || 'pending')}`}>
+                            {job.status || 'pending'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {job.applicants?.length || 0}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {new Date(job.postedDate).toLocaleDateString()}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                          <div className="flex space-x-2">
+                            <select
+                              value={job.status || 'pending'}
+                              onChange={(e) => handleJobStatusChange(job.id, e.target.value)}
+                              className="border border-gray-300 rounded px-2 py-1 text-sm"
+                            >
+                              <option value="pending">Pending</option>
+                              <option value="approved">Approved</option>
+                              <option value="rejected">Rejected</option>
+                            </select>
+                            <button
+                              onClick={() => handleDeleteJob(job.id)}
+                              className="text-red-600 hover:text-red-900"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {filteredJobs.length === 0 && (
+                  <p className="text-center py-8 text-gray-500">No jobs found.</p>
+                )}
+              </div>
+              {hasMore && (
+                <div className="mt-4 text-center">
+                  <button
+                    onClick={() => loadJobs(true)}
+                    className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+                  >
+                    Load More Jobs
+                  </button>
                 </div>
               )}
+            </div>
+          )}
 
-              {/* Recent Activity */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="bg-white border rounded-lg p-6">
-                  <h3 className="text-lg font-semibold mb-4">Recent Users</h3>
-                  <div className="space-y-3">
-                    {users.slice(0, 5).map(user => (
-                      <div key={user.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                        <div>
-                          <p className="font-medium">{user.displayName || 'No name'}</p>
-                          <p className="text-sm text-gray-600">{user.email}</p>
+          {activeTab === 'companies' && (
+            <div className="overflow-x-auto">
+              <p className="text-sm text-gray-600 mb-4">
+                Verify an employer to show a Verified badge on their company profile
+                and job listings. Only an admin can change this — an employer cannot
+                verify their own company (enforced by the Firestore rules).
+              </p>
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Company
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Employer
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Verified
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {filteredCompanies.map((row) => (
+                    <tr key={row.employerId}>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm font-medium text-gray-900">
+                          {row.companyName || 'No company record yet'}
                         </div>
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          user.role === 'employer' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'
-                        }`}>
-                          {user.role}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="bg-white border rounded-lg p-6">
-                  <h3 className="text-lg font-semibold mb-4">Recent Jobs</h3>
-                  <div className="space-y-3">
-                    {jobs.slice(0, 5).map(job => (
-                      <div key={job.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
                         <div>
-                          <p className="font-medium">{job.title}</p>
-                          <p className="text-sm text-gray-600">{job.company}</p>
+                          <div className="text-sm font-medium text-gray-900">
+                            {row.displayName || 'No name'}
+                          </div>
+                          <div className="text-sm text-gray-500">{row.email}</div>
                         </div>
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          job.status === 'approved' ? 'bg-green-100 text-green-800' :
-                          job.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                          'bg-red-100 text-red-800'
-                        }`}>
-                          {job.status}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        {row.verified ? (
+                          <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
+                            ✓ Verified
+                          </span>
+                        ) : (
+                          <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-800">
+                            Not verified
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        <button
+                          onClick={() => handleCompanyVerify(row, !row.verified)}
+                          className={row.verified ? 'text-red-600 hover:text-red-900' : 'text-green-600 hover:text-green-900'}
+                        >
+                          {row.verified ? 'Unverify' : 'Verify'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {filteredCompanies.length === 0 && (
+                <p className="text-center py-8 text-gray-500">No employers found.</p>
+              )}
             </div>
           )}
 
-          {/* Users Tab */}
-          {activeTab === 'users' && (
-            <div className="space-y-6">
-              {/* Search and Filter */}
-              <div className="flex flex-col sm:flex-row gap-4">
-                <div className="flex-1">
-                  <input
-                    type="text"
-                    placeholder="Search users by name, email, or company..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                  />
-                </div>
-                <div>
-                  <select
-                    value={selectedFilter}
-                    onChange={(e) => setSelectedFilter(e.target.value)}
-                    className="px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                  >
-                    <option value="all">All Users</option>
-                    <option value="jobseekers">Job Seekers</option>
-                    <option value="employers">Employers</option>
-                    <option value="suspended">Suspended</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Users Table */}
-              <div className="bg-white border rounded-lg overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          User
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Role
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Status
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Joined
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Actions
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {filteredUsers.map((user) => (
-                        <tr key={user.id} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div>
-                              <div className="text-sm font-medium text-gray-900">
-                                {user.displayName || 'No name'}
-                              </div>
-                              <div className="text-sm text-gray-500">{user.email}</div>
-                              {user.companyName && (
-                                <div className="text-sm text-gray-500">{user.companyName}</div>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`px-2 py-1 rounded-full text-xs font-medium capitalize ${
-                              user.role === 'employer' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'
-                            }`}>
-                              {user.role}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                              user.status === 'active' ? 'bg-green-100 text-green-800' :
-                              user.status === 'suspended' ? 'bg-red-100 text-red-800' :
-                              'bg-yellow-100 text-yellow-800'
-                            }`}>
-                              {user.status}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {new Date(user.createdAt).toLocaleDateString()}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm">
-                            <div className="flex space-x-2">
-                              {user.status === 'active' ? (
-                                <button
-                                  onClick={() => handleUserAction(user.id, 'suspend')}
-                                  className="text-red-600 hover:text-red-800 text-xs bg-red-100 px-2 py-1 rounded"
-                                >
-                                  Suspend
-                                </button>
-                              ) : (
-                                <button
-                                  onClick={() => handleUserAction(user.id, 'activate')}
-                                  className="text-green-600 hover:text-green-800 text-xs bg-green-100 px-2 py-1 rounded"
-                                >
-                                  Activate
-                                </button>
-                              )}
-                              <button
-                                onClick={() => handleUserAction(user.id, 'delete')}
-                                className="text-red-600 hover:text-red-800 text-xs bg-red-100 px-2 py-1 rounded"
-                              >
-                                Delete
-                              </button>
-                              {/* Promote is how new admins are created now
-                                  that admin self-sign-up is removed. The
-                                  promote action itself is enforced by the
-                                  Firestore rules (admins only). */}
-                              {user.role !== 'admin' && (
-                                <button
-                                  onClick={() => handleUserAction(user.id, 'promote')}
-                                  className="text-blue-600 hover:text-blue-800 text-xs bg-blue-100 px-2 py-1 rounded"
-                                >
-                                  Promote
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Jobs Tab */}
-          {activeTab === 'jobs' && (
-            <div className="space-y-6">
-              {/* Search and Filter */}
-              <div className="flex flex-col sm:flex-row gap-4">
-                <div className="flex-1">
-                  <input
-                    type="text"
-                    placeholder="Search jobs by title or company..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                  />
-                </div>
-                <div>
-                  <select
-                    value={selectedFilter}
-                    onChange={(e) => setSelectedFilter(e.target.value)}
-                    className="px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                  >
-                    <option value="all">All Jobs</option>
-                    <option value="pending">Pending Approval</option>
-                    <option value="approved">Approved</option>
-                    <option value="rejected">Rejected</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Jobs Table */}
-              <div className="bg-white border rounded-lg overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Job
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Status
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Applications
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Posted
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Actions
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {filteredJobs.map((job) => (
-                        <tr key={job.id} className="hover:bg-gray-50">
-                          <td className="px-6 py-4">
-                            <div>
-                              <div className="text-sm font-medium text-gray-900">{job.title}</div>
-                              <div className="text-sm text-gray-500">{job.company}</div>
-                              <div className="text-sm text-gray-500">{job.location}</div>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                              job.status === 'approved' ? 'bg-green-100 text-green-800' :
-                              job.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                              'bg-red-100 text-red-800'
-                            }`}>
-                              {job.status}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {job.applicants?.length || 0}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {new Date(job.postedDate).toLocaleDateString()}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm">
-                            <div className="flex space-x-2">
-                              {job.status === 'pending' && (
-                                <>
-                                  <button
-                                    onClick={() => handleJobAction(job.id, 'approve')}
-                                    className="text-green-600 hover:text-green-800 text-xs bg-green-100 px-2 py-1 rounded"
-                                  >
-                                    Approve
-                                  </button>
-                                  <button
-                                    onClick={() => handleJobAction(job.id, 'reject')}
-                                    className="text-red-600 hover:text-red-800 text-xs bg-red-100 px-2 py-1 rounded"
-                                  >
-                                    Reject
-                                  </button>
-                                </>
-                              )}
-                              {job.status === 'approved' && (
-                                <button
-                                  onClick={() => handleJobAction(job.id, 'feature')}
-                                  className="text-blue-600 hover:text-blue-800 text-xs bg-blue-100 px-2 py-1 rounded"
-                                >
-                                  Feature
-                                </button>
-                              )}
-                              <Link
-                                to={`/jobs/${job.id}`}
-                                className="text-blue-600 hover:text-blue-800 text-xs bg-blue-100 px-2 py-1 rounded"
-                              >
-                                View
-                              </Link>
-                              <button
-                                onClick={() => handleJobAction(job.id, 'delete')}
-                                className="text-red-600 hover:text-red-800 text-xs bg-red-100 px-2 py-1 rounded"
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Reports Tab */}
           {activeTab === 'reports' && (
             <div className="space-y-6">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* System Health */}
-                <div className="bg-white border rounded-lg p-6">
-                  <h3 className="text-lg font-semibold mb-4">System Health</h3>
-                  <div className="space-y-4">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">Database Status</span>
-                      <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">Healthy</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">API Response Time</span>
-                      <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full">~120ms</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">Active Sessions</span>
-                      <span className="text-sm font-medium">24</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-gray-600">Storage Used</span>
-                      <span className="text-sm font-medium">2.4GB / 10GB</span>
-                    </div>
-                  </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="bg-blue-50 p-4 rounded-lg">
+                  <h3 className="font-semibold text-blue-900">User Growth</h3>
+                  <p className="text-2xl font-bold text-blue-600">
+                    {users.filter((u) => u.role === 'jobseeker').length}
+                  </p>
+                  <p className="text-sm text-blue-700">Job seekers registered</p>
                 </div>
-
-                {/* Recent Reports */}
-                <div className="bg-white border rounded-lg p-6">
-                  <h3 className="text-lg font-semibold mb-4">Recent Reports</h3>
-                  <div className="space-y-3">
-                    <div className="p-3 bg-red-50 rounded-lg">
-                      <p className="text-sm font-medium text-red-800">Job Report</p>
-                      <p className="text-xs text-red-600">Inappropriate content reported in job posting #12345</p>
-                      <p className="text-xs text-gray-500 mt-1">2 hours ago</p>
-                    </div>
-                    <div className="p-3 bg-yellow-50 rounded-lg">
-                      <p className="text-sm font-medium text-yellow-800">User Report</p>
-                      <p className="text-xs text-yellow-600">Spam behavior reported for user john@example.com</p>
-                      <p className="text-xs text-gray-500 mt-1">1 day ago</p>
-                    </div>
-                    <div className="p-3 bg-blue-50 rounded-lg">
-                      <p className="text-sm font-medium text-blue-800">System Alert</p>
-                      <p className="text-xs text-blue-600">High number of failed login attempts detected</p>
-                      <p className="text-xs text-gray-500 mt-1">3 days ago</p>
-                    </div>
-                  </div>
+                <div className="bg-green-50 p-4 rounded-lg">
+                  <h3 className="font-semibold text-green-900">Employer Growth</h3>
+                  <p className="text-2xl font-bold text-green-600">
+                    {users.filter((u) => u.role === 'employer').length}
+                  </p>
+                  <p className="text-sm text-green-700">Employers registered</p>
+                </div>
+                <div className="bg-purple-50 p-4 rounded-lg">
+                  <h3 className="font-semibold text-purple-900">Job Postings</h3>
+                  <p className="text-2xl font-bold text-purple-600">{jobs.length}</p>
+                  <p className="text-sm text-purple-700">Total jobs posted</p>
                 </div>
               </div>
 
-              {/* Analytics Charts */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="bg-white border rounded-lg p-6">
-                  <h3 className="text-lg font-semibold mb-4">User Growth</h3>
-                  <div className="h-64 flex items-center justify-center bg-gray-50 rounded">
-                    <p className="text-gray-500">Chart placeholder - User registrations over time</p>
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <h3 className="font-semibold mb-2">System Health</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                  <div>
+                    <p className="text-gray-600">Database Status</p>
+                    <p className="font-medium text-green-600">● Connected</p>
                   </div>
-                </div>
-
-                <div className="bg-white border rounded-lg p-6">
-                  <h3 className="text-lg font-semibold mb-4">Job Postings</h3>
-                  <div className="h-64 flex items-center justify-center bg-gray-50 rounded">
-                    <p className="text-gray-500">Chart placeholder - Job postings over time</p>
+                  <div>
+                    <p className="text-gray-600">API Response Time</p>
+                    <p className="font-medium">~120ms</p>
                   </div>
-                </div>
-              </div>
-
-              {/* Detailed Reports */}
-              <div className="bg-white border rounded-lg p-6">
-                <h3 className="text-lg font-semibold mb-4">Generate Reports</h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <button className="p-4 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
-                    <h4 className="font-medium mb-2">User Activity Report</h4>
-                    <p className="text-sm text-gray-600">Export user engagement and activity data</p>
-                  </button>
-                  <button className="p-4 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
-                    <h4 className="font-medium mb-2">Job Performance Report</h4>
-                    <p className="text-sm text-gray-600">Analyze job posting success rates</p>
-                  </button>
-                  <button className="p-4 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
-                    <h4 className="font-medium mb-2">Financial Report</h4>
-                    <p className="text-sm text-gray-600">Revenue and cost analysis</p>
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Integrations Tab */}
-          {activeTab === 'integrations' && (
-            <div className="space-y-6">
-              <div className="bg-white border rounded-lg p-6">
-                <h3 className="text-lg font-semibold mb-4">Third-Party Integrations</h3>
-                <p className="text-gray-600 mb-6">Connect your job board with external services to sync jobs and enhance functionality.</p>
-                
-                <div className="space-y-6">
-                  {/* Greenhouse Integration */}
-                  <div className="border border-gray-200 rounded-lg p-6">
-                    <div className="flex items-start justify-between mb-4">
-                      <div>
-                        <h4 className="text-lg font-semibold text-gray-900">Greenhouse</h4>
-                        <p className="text-sm text-gray-600 mt-1">
-                          Sync jobs from your Greenhouse job board automatically
-                        </p>
-                      </div>
-                      <span className="px-3 py-1 bg-green-100 text-green-800 text-xs font-medium rounded-full">
-                        Available
-                      </span>
-                    </div>
-                    <div className="mt-4">
-                      <GreenhouseIntegration 
-                        onSuccess={(msg) => {
-                          setSuccess(msg);
-                          setTimeout(() => setSuccess(null), 5000);
-                        }}
-                        onError={(err) => {
-                          setError(err);
-                          setTimeout(() => setError(null), 5000);
-                        }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Coming Soon Integrations */}
-                  <div className="border border-gray-200 rounded-lg p-6 opacity-50">
-                    <div className="flex items-start justify-between mb-4">
-                      <div>
-                        <h4 className="text-lg font-semibold text-gray-900">Workday</h4>
-                        <p className="text-sm text-gray-600 mt-1">
-                          Sync jobs from Workday
-                        </p>
-                      </div>
-                      <span className="px-3 py-1 bg-gray-100 text-gray-600 text-xs font-medium rounded-full">
-                        Coming Soon
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="border border-gray-200 rounded-lg p-6 opacity-50">
-                    <div className="flex items-start justify-between mb-4">
-                      <div>
-                        <h4 className="text-lg font-semibold text-gray-900">Lever</h4>
-                        <p className="text-sm text-gray-600 mt-1">
-                          Sync jobs from Lever
-                        </p>
-                      </div>
-                      <span className="px-3 py-1 bg-gray-100 text-gray-600 text-xs font-medium rounded-full">
-                        Coming Soon
-                      </span>
-                    </div>
+                  <div>
+                    <p className="text-gray-600">Active Sessions</p>
+                    <p className="font-medium">24</p>
                   </div>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Settings Tab */}
           {activeTab === 'settings' && (
             <div className="space-y-6">
-              {/* Platform Settings */}
-              <div className="bg-white border rounded-lg p-6">
+              <div>
                 <h3 className="text-lg font-semibold mb-4">Platform Settings</h3>
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h4 className="font-medium">Auto-approve jobs</h4>
-                      <p className="text-sm text-gray-600">Automatically approve new job postings</p>
+                      <p className="font-medium">Job Auto-Approval</p>
+                      <p className="text-sm text-gray-500">Automatically approve new job postings</p>
                     </div>
-                    <input type="checkbox" className="toggle" />
+                    <input type="checkbox" className="h-4 w-4 text-blue-600" />
                   </div>
                   <div className="flex items-center justify-between">
                     <div>
-                      <h4 className="font-medium">Email notifications</h4>
-                      <p className="text-sm text-gray-600">Send email notifications to admins</p>
+                      <p className="font-medium">Email Notifications</p>
+                      <p className="text-sm text-gray-500">Send email notifications to users</p>
                     </div>
-                    <input type="checkbox" className="toggle" defaultChecked />
+                    <input type="checkbox" defaultChecked className="h-4 w-4 text-blue-600" />
                   </div>
                   <div className="flex items-center justify-between">
                     <div>
-                      <h4 className="font-medium">Maintenance mode</h4>
-                      <p className="text-sm text-gray-600">Put the platform in maintenance mode</p>
+                      <p className="font-medium">Maintenance Mode</p>
+                      <p className="text-sm text-gray-500">Put the platform in maintenance mode</p>
                     </div>
-                    <input type="checkbox" className="toggle" />
+                    <input type="checkbox" className="h-4 w-4 text-blue-600" />
                   </div>
                 </div>
-              </div>
-
-              {/* Content Moderation */}
-              <div className="bg-white border rounded-lg p-6">
-                <h3 className="text-lg font-semibold mb-4">Content Moderation</h3>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Banned Keywords (comma-separated)
-                    </label>
-                    <textarea
-                      rows={3}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="spam, inappropriate, offensive..."
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Auto-moderation threshold
-                    </label>
-                    <select className="px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
-                      <option>Low sensitivity</option>
-                      <option>Medium sensitivity</option>
-                      <option>High sensitivity</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              {/* Email Templates */}
-              <div className="bg-white border rounded-lg p-6">
-                <h3 className="text-lg font-semibold mb-4">Email Templates</h3>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Welcome Email Template
-                    </label>
-                    <textarea
-                      rows={4}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="Welcome to Job Seeker! We're excited to have you..."
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Job Approval Email Template
-                    </label>
-                    <textarea
-                      rows={4}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                      placeholder="Your job posting has been approved..."
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* API Settings */}
-              <div className="bg-white border rounded-lg p-6">
-                <h3 className="text-lg font-semibold mb-4">API Settings</h3>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Rate Limit (requests per hour)
-                    </label>
-                    <input
-                      type="number"
-                      defaultValue={1000}
-                      className="px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      API Key Expiration (days)
-                    </label>
-                    <input
-                      type="number"
-                      defaultValue={365}
-                      className="px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Backup & Recovery */}
-              <div className="bg-white border rounded-lg p-6">
-                <h3 className="text-lg font-semibold mb-4">Backup & Recovery</h3>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="font-medium">Last Backup</h4>
-                      <p className="text-sm text-gray-600">Yesterday at 3:00 AM</p>
-                    </div>
-                    <button className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors">
-                      Create Backup
-                    </button>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="font-medium">Auto Backup</h4>
-                      <p className="text-sm text-gray-600">Automatic daily backups at 3:00 AM</p>
-                    </div>
-                    <input type="checkbox" className="toggle" defaultChecked />
-                  </div>
-                </div>
-              </div>
-
-              {/* Save Settings Button */}
-              <div className="flex justify-end">
-                <button
-                  onClick={() => setSuccess('Settings saved successfully!')}
-                  className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-                >
-                  Save All Settings
-                </button>
               </div>
             </div>
           )}
