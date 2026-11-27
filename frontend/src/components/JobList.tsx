@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import AdvancedJobSearch from './AdvancedJobSearch';
 import JobCard from './JobCard';
 import BackendStatus from './BackendStatus';
-import { searchJobs, Job, getJobs, applyToJob } from '../services/jobService';
+import { searchJobs, Job, getJobs, SearchFilters } from '../services/jobService';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { auth } from '../firebaseConfig';
@@ -14,7 +14,7 @@ const JobList = () => {
   const [backendError, setBackendError] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
-  const [filters, setFilters] = useState<{ keyword: string; location: string; type: string } | null>(null);
+  const [filters, setFilters] = useState<SearchFilters | null>(null);
   const size = 10;
   const navigate = useNavigate();
   const [user] = useAuthState(auth);
@@ -25,11 +25,11 @@ const JobList = () => {
       setError(null); // Clear previous errors
       let data;
       if (filtersArg) {
-        data = await searchJobs(filtersArg.keyword, filtersArg.location, filtersArg.type, pageNum, size);
+        data = await searchJobs(filtersArg, pageNum, size);
       } else {
         data = await getJobs(pageNum, size);
       }
-      
+
       // Handle paginated response
       setJobs(data.jobs || []);
       setTotal(data.total || 0);
@@ -58,26 +58,13 @@ const JobList = () => {
     // eslint-disable-next-line
   }, [page]);
 
-  const handleSearch = (filtersObj: {
-    keyword: string;
-    location: string;
-    type: string;
-    salary: string;
-    experience: string;
-    company: string;
-    remote: boolean;
-    datePosted: string;
-    radius: string;
-  }) => {
-    // Convert advanced filters to basic search format for API compatibility
-    const basicFilters = {
-      keyword: filtersObj.keyword,
-      location: filtersObj.location,
-      type: filtersObj.type
-    };
-    setFilters(basicFilters);
+  // All advanced filters are passed through to searchJobs — salary,
+  // experience, company, remote and date posted are now actually applied
+  // (previously only keyword/location/type survived this step).
+  const handleSearch = (filtersObj: SearchFilters) => {
+    setFilters(filtersObj);
     setPage(0);
-    fetchJobs(0, basicFilters);
+    fetchJobs(0, filtersObj);
   };
 
   const handleApply = async (jobId: string) => {
@@ -124,14 +111,14 @@ const JobList = () => {
   return (
     <div className="container mx-auto px-4 py-8">
       <h1 className="text-3xl font-bold text-gray-800 mb-8">Find Your Dream Job</h1>
-      
-      <BackendStatus 
+
+      <BackendStatus
         onError={handleBackendError}
         onSuccess={handleBackendSuccess}
       />
-      
+
       <AdvancedJobSearch onSearch={handleSearch} />
-      
+
       <div className="space-y-4">
         {jobs.length === 0 ? (
           <div className="text-center text-gray-600 py-8">
@@ -171,4 +158,4 @@ const JobList = () => {
   );
 };
 
-export default JobList; 
+export default JobList;

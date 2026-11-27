@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import axios from 'axios';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
+import { useAuthState } from 'react-firebase-hooks/auth';
+import { auth } from '../firebaseConfig';
+import { API_BASE_URL } from '../config';
 
 const initialState = {
   title: '',
@@ -16,6 +19,7 @@ const initialState = {
 };
 
 const JobForm: React.FC = () => {
+  const [user, userLoading] = useAuthState(auth);
   const [form, setForm] = useState(initialState);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,19 +41,49 @@ const JobForm: React.FC = () => {
       setLoading(false);
       return;
     }
+    if (!user) {
+      setError('Please log in to post a job.');
+      setLoading(false);
+      return;
+    }
     try {
-      await axios.post('http://127.0.0.1:5001/job-seeker-80fd8/us-central1/api/jobs', {
+      // The API base URL comes from REACT_APP_API_URL (see frontend/.env.example)
+      // and defaults to the deployed Functions URL — never a localhost address.
+      const token = await user.getIdToken();
+      await axios.post(`${API_BASE_URL}/jobs`, {
         ...form,
         skills: form.skills.split(',').map(s => s.trim()).filter(Boolean),
+      }, {
+        headers: { Authorization: `Bearer ${token}` },
       });
       setSuccess(true);
       setTimeout(() => navigate('/'), 1500);
-    } catch (err) {
-      setError('Failed to post job.');
+    } catch (err: any) {
+      setError(err?.response?.data?.error || 'Failed to post job.');
     } finally {
       setLoading(false);
     }
   };
+
+  if (userLoading) {
+    return (
+      <div className="flex justify-center items-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="container mx-auto max-w-xl bg-white p-6 rounded shadow">
+        <h2 className="text-2xl font-bold mb-4">Post a Job</h2>
+        <p className="text-gray-600 mb-4">Please log in to post a job.</p>
+        <Link to="/login" className="text-blue-600 hover:underline font-medium">
+          Sign in
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto max-w-xl bg-white p-6 rounded shadow">
@@ -81,7 +115,7 @@ const JobForm: React.FC = () => {
             <option value="FULL_TIME">Full Time</option>
             <option value="PART_TIME">Part Time</option>
             <option value="CONTRACT">Contract</option>
-            <option value="INTERN">Intern</option>
+            <option value="INTERNSHIP">Intern</option>
           </select>
         </div>
         <div>
@@ -105,7 +139,7 @@ const JobForm: React.FC = () => {
           <input type="date" name="expiryDate" value={form.expiryDate} onChange={handleChange} className="w-full border px-3 py-2 rounded" required />
         </div>
         {error && <div className="text-red-500 text-sm">{error}</div>}
-        {success && <div className="text-green-600 text-sm">Job posted successfully! Redirecting...</div>}
+        {success && <div className="text-green-600 text-sm">Job posted successfully! It is pending review. Redirecting...</div>}
         <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700" disabled={loading}>
           {loading ? 'Posting...' : 'Post Job'}
         </button>
@@ -114,4 +148,4 @@ const JobForm: React.FC = () => {
   );
 };
 
-export default JobForm; 
+export default JobForm;

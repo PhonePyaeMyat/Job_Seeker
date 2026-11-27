@@ -23,43 +23,41 @@ import Terms from './pages/Terms';
 import Privacy from './pages/Privacy';
 import CompanyProfile from './components/CompanyProfile';
 import LandingPage from './components/LandingPage';
+import { getUserRole, UserRole } from './services/userService';
 
 function App() {
   const [user, loading] = useAuthState(auth);
-  const [role, setRole] = useState(localStorage.getItem('role') || 'jobseeker');
+  // The role comes from the Firestore user document (via userService) — the
+  // single source of truth. It used to come from localStorage, which anyone
+  // can edit in the browser console to grant themselves any role.
+  const [role, setRole] = useState<UserRole>('jobseeker');
+  const [roleLoading, setRoleLoading] = useState(false);
 
-  // Update role when localStorage changes
+  // Load the role from Firestore whenever the signed-in user changes.
   useEffect(() => {
-    const handleStorageChange = () => {
-      setRole(localStorage.getItem('role') || 'jobseeker');
-    };
-
-    const handleRoleChange = (event: CustomEvent) => {
-      setRole(event.detail.role);
-    };
-
-    // Listen for storage changes and custom role change events
-    window.addEventListener('storage', handleStorageChange);
-    window.addEventListener('roleChanged', handleRoleChange as EventListener);
-    
-    // Also check on mount
-    handleStorageChange();
-
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-      window.removeEventListener('roleChanged', handleRoleChange as EventListener);
-    };
-  }, []);
-
-  // Update role when user changes
-  useEffect(() => {
-    if (user) {
-      setRole(localStorage.getItem('role') || 'jobseeker');
+    if (!user) {
+      setRole('jobseeker');
+      setRoleLoading(false);
+      return;
     }
+    let cancelled = false;
+    setRoleLoading(true);
+    getUserRole(user.uid)
+      .then((r) => {
+        if (!cancelled) setRole(r);
+      })
+      .catch(() => {
+        if (!cancelled) setRole('jobseeker');
+      })
+      .finally(() => {
+        if (!cancelled) setRoleLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [user]);
-  
-  
-  if (loading) return (
+
+  if (loading || (user && roleLoading)) return (
     <div className="flex justify-center items-center min-h-screen">
       <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
     </div>
@@ -68,7 +66,7 @@ function App() {
     <Router>
       <Header />
       <main>
-        
+
           <Routes>
             <Route path="/" element={user ? (role === 'admin' ? <AdminPanel /> : role === 'employer' ? <EmployerHome /> : role === 'jobseeker' ? <JobSeekerHome /> : <JobList />) : <LandingPage />} />
             <Route path="/jobs" element={
@@ -97,7 +95,7 @@ function App() {
               ) : <Navigate to="/login" />
             } />
             <Route path="/profile" element={user ? <Profile /> : <Navigate to="/login" />} />
-            <Route path="/admin" element={user && (user.email === 'admin@jobseeker.com' || user.displayName === 'admin') ? <AdminPanel /> : <Navigate to="/login" />} />
+            <Route path="/admin" element={user && role === 'admin' ? <AdminPanel /> : <Navigate to="/login" />} />
             <Route path="/about" element={<About />} />
             <Route path="/contact" element={<Contact />} />
             <Route path="/terms" element={<Terms />} />
@@ -105,11 +103,11 @@ function App() {
             <Route path="/companies/:id" element={<CompanyProfile />} />
             <Route path="/500" element={<ServerError />} />
             <Route path="*" element={<NotFound />} />
-          </Routes> 
+          </Routes>
       </main>
       <Footer />
     </Router>
   );
 }
 
-export default App; 
+export default App;
