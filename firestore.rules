@@ -1,38 +1,112 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Jobs collection - allow read access to all, write access for authenticated users
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Admin = an `admins/{uid}` document exists, or the caller's user
+    // document has role 'admin'. The first admin document must be created
+    // manually in the Firebase console (see ADMIN_LOGIN_GUIDE.md) — there
+    // is no self-service admin sign-up any more.
+    function isAdmin() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+      );
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Jobs: anyone can read. Only the posting employer (postedBy == uid) or
+    // an admin can edit or delete a job. Applying may only append the
+    // caller's own uid to the applicants array — nothing else, nobody else.
     match /jobs/{jobId} {
-      // Anyone can read jobs (for browsing)
-      allow read: if true; 
-      
-      // Only authenticated users can write/create jobs
-      allow write: if request.auth != null; 
-      
-      // Allow updates to applicants field for authenticated users applying to jobs
-      allow update: if request.auth != null && 
-        // Only allow updating the applicants array
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['applicants']) &&
-        // Ensure the user is adding themselves to the applicants array
-        request.auth.uid in request.resource.data.applicants;
+      allow read: if true;
+
+      allow create: if isSignedIn()
+        && request.resource.data.postedBy == request.auth.uid
+        && request.resource.data.companyId == request.auth.uid
+        && request.resource.data.status == 'pending';
+
+      allow update: if isSignedIn()
+        && resource.data.postedBy == request.auth.uid;
+
+      allow update: if isSignedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['applicants'])
+        && request.resource.data.applicants.hasAll(resource.data.applicants)
+        && request.resource.data.applicants.size() == resource.data.applicants.size() + 1
+        && request.auth.uid in request.resource.data.applicants
+        && !(request.auth.uid in resource.data.applicants);
+
+      allow update: if isAdmin();
+
+      allow delete: if isSignedIn()
+        && (resource.data.postedBy == request.auth.uid || isAdmin());
     }
-    
-    // Users collection - users can only access their own data
+
+    // Users: a user can read and edit only their own document, and may never
+    // change their own role (that would be self-promotion to admin).
+    // Admins can read and edit any user document, including the role.
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if isOwner(userId) || isAdmin();
+
+      // New accounts may only register as jobseeker or employer.
+      allow create: if isSignedIn()
+        && request.auth.uid == userId
+        && request.resource.data.role in ['jobseeker', 'employer'];
+
+      allow update: if isOwner(userId)
+        && request.resource.data.role == resource.data.role;
+
+      allow update: if isAdmin();
+
+      allow delete: if isAdmin();
     }
-    
-    // Companies collection - allow read access to all, write access for authenticated users
+
+    // Companies: only the owning employer (ownerId) or an admin may write.
     match /companies/{companyId} {
-      allow read: if true; // Anyone can read company info
-      allow write: if request.auth != null; // Only authenticated users can write
+      allow read: if true;
+
+      allow create: if isSignedIn()
+        && request.resource.data.ownerId == request.auth.uid;
+
+      allow update, delete: if isSignedIn()
+        && (resource.data.ownerId == request.auth.uid || isAdmin());
     }
-    
-    // Applications collection - users can only access their own applications
+
+    // Applications: created only by the applicant themselves, always with
+    // status 'pending'. Readable by the applicant, the job's poster, or an
+    // admin. Status changes only by the job's poster or an admin, and only
+    // the status field may change.
     match /applications/{applicationId} {
-      allow read, write: if request.auth != null && 
-        (request.auth.uid == resource.data.userId || 
-         request.auth.uid == request.resource.data.userId);
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == 'pending';
+
+      allow read: if isSignedIn() && (
+        resource.data.userId == request.auth.uid ||
+        get(/databases/$(database)/documents/jobs/$(resource.data.jobId)).data.postedBy == request.auth.uid ||
+        isAdmin()
+      );
+
+      allow update: if isSignedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+        && (
+          get(/databases/$(database)/documents/jobs/$(resource.data.jobId)).data.postedBy == request.auth.uid ||
+          isAdmin()
+        );
+
+      allow delete: if isAdmin();
+    }
+
+    // Admin allowlist: readable and writable by admins only. Bootstrap the
+    // first entry manually in the Firebase console.
+    match /admins/{userId} {
+      allow read, write: if isAdmin();
     }
   }
 }

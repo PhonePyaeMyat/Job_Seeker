@@ -12,7 +12,7 @@ A full-stack job search platform built with React.js (TypeScript), Firebase Func
 - **Role-Based Dashboards** - Separate interfaces for job seekers, employers, and admin
 - **Job Applications** - Apply to jobs with profile data or CV upload, track application status
 - **Job Details** - Detailed job view with application functionality and company information
-- **Job Recommendations** - AI-powered job recommendations based on user profile and preferences
+- **Job Recommendations** - Rule-based job recommendations based on user profile (skills, experience, location and recency scoring; no LLM yet)
 - **Company Profiles** - Detailed company information and job listings
 - **Admin Panel** - Administrative controls and system oversight
 - **User Profiles** - Comprehensive profile management with role-specific fields
@@ -30,9 +30,7 @@ A full-stack job search platform built with React.js (TypeScript), Firebase Func
 - **Error Handling** - Comprehensive error states and user feedback
 - **Loading States** - Smooth loading indicators and transitions
 - **Landing Page** - Professional landing page with featured jobs, company spotlight, and job alerts
-- **Job Alerts** - Set up job alerts for specific criteria
 - **Company Spotlight** - Featured companies with ratings and job counts
-- **Salary Insights** - Industry salary information and trends
 ## Tech Stack
 
 ### Frontend
@@ -63,8 +61,6 @@ Job_Seeker/
 ├── functions/                          # Firebase Functions (Backend API)
 │   ├── index.js                       # Main functions file with Express routes
 │   ├── package.json                   # Functions dependencies
-│   ├── firebase-credentials.json     # Firebase service account
-│   └── node_modules/                 # Functions dependencies
 ├── frontend/                          # React Frontend Application
 │   ├── public/                       # Static assets
 │   │   ├── index.html               # Main HTML template
@@ -72,6 +68,7 @@ Job_Seeker/
 │   ├── src/                         # Source code
 │   │   ├── components/              # Reusable React components
 │   │   │   ├── AdvancedJobSearch.tsx # Advanced job search with filters
+│   │   │   ├── config.ts               # API base URL (REACT_APP_API_URL)
 │   │   │   ├── ApplicationModal.tsx  # Job application modal
 │   │   │   ├── BackendStatus.tsx     # API connection status
 │   │   │   ├── CompanyProfile.tsx    # Company profile display
@@ -100,22 +97,23 @@ Job_Seeker/
 │   │   │   ├── SignUp.tsx          # User registration page
 │   │   │   └── Terms.tsx           # Terms of service page
 │   │   ├── services/                # API services
+│   │   │   ├── userService.ts      # Role lookup from Firestore user doc
 │   │   │   └── jobService.ts       # Job-related API calls
 │   │   ├── App.tsx                 # Main application component
 │   │   ├── firebaseConfig.ts       # Firebase configuration
 │   │   ├── index.css               # Global styles
 │   │   └── index.tsx               # Application entry point
-│   ├── build/                      # Production build output
+├── frontend/.env.example        # Example frontend env vars (copy to .env.local)
 │   ├── package.json                # Frontend dependencies
 │   ├── tailwind.config.js          # Tailwind CSS configuration
 │   └── tsconfig.json               # TypeScript configuration
-├── node_modules/                    # Root dependencies
 ├── firebase.json                    # Firebase project configuration
 ├── firestore.rules                  # Firestore security rules
 ├── firestore.indexes.json          # Database indexes
 ├── package.json                     # Root package.json with scripts
 ├── package-lock.json               # Dependency lock file
 ├── FIREBASE_DEPLOYMENT.md          # Deployment documentation
+├── LICENSE                          # MIT License
 └── README.md                       # This file
 ```
 ## Getting Started
@@ -134,7 +132,8 @@ Job_Seeker/
 
 2. **Configure Firebase:**
    - Update `.firebaserc` with your Firebase project ID
-   - Update `frontend/src/firebaseConfig.ts` with your project configuration
+   - Copy `frontend/.env.example` to `frontend/.env.local` and fill in your
+     Firebase project values (`REACT_APP_FIREBASE_*`) and `REACT_APP_API_URL`
 
 3. **Deploy to Firebase:**
    ```bash
@@ -166,21 +165,12 @@ The app will run at `http://localhost:3000` with the backend API running on the 
 
 ### Manual Backend Setup (Alternative)
 
-If you prefer to run the backend separately:
-
-1. **Start the backend server:**
-   ```bash
-   cd functions
-   npm start
-   ```
-
-2. **Start the frontend:**
-   ```bash
-   cd frontend
-   npm start
-   ```
-
-The backend will run on `http://localhost:3001` and frontend on `http://localhost:3000`.
+The backend is a Firebase Functions app, so it runs through the Functions
+emulator (`npm run emulators:functions`) on port 5001 — there is no
+standalone server on port 3001. `npm start` inside `functions/` opens the
+Functions shell, it does not start an HTTP server. Set
+`REACT_APP_API_URL=http://127.0.0.1:5001/job-seeker-80fd8/us-central1/api`
+in `frontend/.env.local` when developing against the emulator.
 
 ## Available Scripts
 
@@ -235,7 +225,7 @@ After deployment, your API will be available at:
 - `POST /jobs/:id/apply` - Apply to a job
 
 #### Sample Data
-- `GET /addSampleJobs` - Add sample job data to the database
+- `POST /addSampleJobs` - Add sample job data to the database (admin only; remove before a public launch)
 
 All endpoints interact with Firebase Firestore collections and include proper CORS handling for cross-origin requests.
 
@@ -272,20 +262,27 @@ All endpoints interact with Firebase Firestore collections and include proper CO
 ## Environment Variables & Security
 
 ### Frontend Security
-- **Firebase Config:** Stored in `frontend/src/firebaseConfig.ts`
+- **Firebase Config:** Read from environment variables (`REACT_APP_FIREBASE_*` in `frontend/.env.local`; see `frontend/.env.example`). Never commit `.env.local`.
 - **API Keys:** Firebase public keys are safe to expose in frontend
 - **Authentication:** Handled by Firebase Auth SDK
 
 ### Backend Security
-- **Service Account:** Firebase Admin SDK credentials in `functions/firebase-credentials.json`
+- **Service Account:** The Admin SDK uses Application Default Credentials in production. Never commit a service-account JSON file.
 - **Environment Variables:** Firebase Functions automatically handle environment variables
 - **CORS:** Configured to allow requests from your frontend domain
 
 ### Database Security
 - **Firestore Rules:** Comprehensive security rules in `firestore.rules`
 - **Authentication Required:** Most write operations require user authentication
-- **Data Validation:** Server-side validation for all API endpoints
+- **Data Validation:** Server-side validation for job data on all write endpoints, and Firebase ID-token authentication on all write endpoints
 - **User Isolation:** Users can only access their own data
+
+### Admin access
+
+There is no admin sign-up and no admin access code. Admin is granted by an
+existing admin (Admin Panel → Promote) or by creating an `admins/{uid}`
+document in the Firebase console. See `ADMIN_LOGIN_GUIDE.md`.
+
 ## Firebase Configuration
 
 ### Core Configuration Files
@@ -312,10 +309,10 @@ This project is actively maintained and includes:
 ✅ **Job saving functionality** - Save jobs for later viewing and application
 ✅ **Responsive design** - Mobile-first design with Tailwind CSS
 ✅ **Firebase integration** - Real-time updates with Firestore
-✅ **Production-ready deployment** - Firebase Hosting and Functions
+✅ **Deployment** - Firebase Hosting and Functions
 ✅ **Landing page with featured content** - Professional landing page with job alerts and company spotlight
 ✅ **Company profiles** - Detailed company information and job listings
-✅ **Job recommendations** - AI-powered job recommendations based on user profile
+✅ **Job recommendations** - Rule-based job recommendations based on user profile (skills, experience, location, recency)
 ## Contributing
 
 1. Fork the repository
