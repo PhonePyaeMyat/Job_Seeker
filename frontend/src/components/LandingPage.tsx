@@ -41,7 +41,6 @@ const LandingPage: React.FC = () => {
     company: string;
     remote: boolean;
     datePosted: string;
-    radius: string;
   }) => {
     // Check if user entered any search criteria
     if (!filters.keyword && !filters.location && !filters.type && !filters.company && !filters.remote) {
@@ -51,11 +50,19 @@ const LandingPage: React.FC = () => {
     try {
       setSearchLoading(true);
       
-      // Use the searchJobs API with the basic filters it supports
+      // searchJobs takes the filters object plus page/size — the advanced
+      // filters below are still applied client-side, as before.
       const data = await searchJobs(
-        filters.keyword,
-        filters.location,
-        filters.type,
+        {
+          keyword: filters.keyword,
+          location: filters.location,
+          type: filters.type,
+          salary: '',
+          experience: '',
+          company: '',
+          remote: false,
+          datePosted: '',
+        },
         0,
         20
       );

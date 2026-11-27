@@ -14,7 +14,7 @@ import {
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import AdvancedJobSearch from './AdvancedJobSearch';
 import JobCard from './JobCard';
-import { applyToJob } from '../services/jobService';
+import { applyToJob, applySearchFilters, SearchFilters } from '../services/jobService';
 
 interface Job {
   id: string;
@@ -50,7 +50,7 @@ const JobSeekerHome: React.FC = () => {
   const [savedJobs, setSavedJobs] = useState<Job[]>([]);
   const [savedJobIds, setSavedJobIds] = useState<string[]>([]);
   const [stats, setStats] = useState<JobSeekerStats | null>(null);
-  const [searchFilters, setSearchFilters] = useState<{ keyword: string; location: string; type: string } | null>(null);
+  const [searchFilters, setSearchFilters] = useState<SearchFilters | null>(null);
   const [activeTab, setActiveTab] = useState<'all' | 'featured' | 'recent' | 'saved'>('all');
   const [error, setError] = useState<string | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -93,18 +93,6 @@ const JobSeekerHome: React.FC = () => {
           status: data.status || 'approved',
           featured: data.featured || false
         } as Job;
-      });
-
-      console.log('Setting jobs state with:', jobsData.length, 'jobs');
-      console.log('Current user UID:', user?.uid);
-      
-      // Check which jobs the user has applied to
-      const userAppliedJobs = jobsData.filter(job => 
-        job.applicants && job.applicants.includes(user?.uid || '')
-      );
-      console.log('User has applied to:', userAppliedJobs.length, 'jobs');
-      userAppliedJobs.forEach(job => {
-        console.log(`Applied to: ${job.title}`);
       });
 
       setJobs(jobsData);
@@ -289,7 +277,6 @@ const JobSeekerHome: React.FC = () => {
   // Force refresh when component mounts (user navigates back)
   useEffect(() => {
     if (user) {
-      console.log('Component mounted, forcing refresh...');
       setRefreshTrigger(prev => prev + 1);
     }
   }, [user]);
@@ -297,7 +284,6 @@ const JobSeekerHome: React.FC = () => {
   // Reload jobs when user navigates back to this page
   useEffect(() => {
     if (user && location.pathname === '/') {
-      console.log('Navigated to home page, reloading jobs...');
       // Force reload immediately
       loadJobSeekerData();
     }
@@ -307,7 +293,6 @@ const JobSeekerHome: React.FC = () => {
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (!document.hidden && user && location.pathname === '/') {
-        console.log('Page became visible, reloading jobs...');
         loadJobSeekerData();
       }
     };
@@ -332,24 +317,11 @@ const JobSeekerHome: React.FC = () => {
     }
   }, [user, jobs, loadSavedJobs]);
 
-  const handleSearch = (filters: {
-    keyword: string;
-    location: string;
-    type: string;
-    salary: string;
-    experience: string;
-    company: string;
-    remote: boolean;
-    datePosted: string;
-    radius: string;
-  }) => {
-    // Convert advanced filters to basic search format
-    const basicFilters = {
-      keyword: filters.keyword,
-      location: filters.location,
-      type: filters.type
-    };
-    setSearchFilters(basicFilters);
+  // All advanced filters are kept and applied through the shared helper.
+  // Previously only keyword/location/type survived, and salary, experience,
+  // company, remote and date posted were silently dropped.
+  const handleSearch = (filters: SearchFilters) => {
+    setSearchFilters(filters);
     setActiveTab('all');
   };
 
@@ -425,29 +397,7 @@ const JobSeekerHome: React.FC = () => {
     
     // Apply search filters if they exist
     if (searchFilters && activeTab === 'all') {
-      let filteredJobs = [...displayJobs];
-      
-      if (searchFilters.keyword) {
-        const keyword = searchFilters.keyword.toLowerCase();
-        filteredJobs = filteredJobs.filter(job =>
-          job.title.toLowerCase().includes(keyword) ||
-          job.company.toLowerCase().includes(keyword) ||
-          job.description.toLowerCase().includes(keyword)
-        );
-      }
-      
-      if (searchFilters.location) {
-        const location = searchFilters.location.toLowerCase();
-        filteredJobs = filteredJobs.filter(job =>
-          job.location.toLowerCase().includes(location)
-        );
-      }
-      
-      if (searchFilters.type) {
-        filteredJobs = filteredJobs.filter(job => job.type === searchFilters.type);
-      }
-      
-      return filteredJobs;
+      return applySearchFilters(displayJobs, searchFilters);
     }
     
     return displayJobs;

@@ -192,8 +192,13 @@ const ApplicationModal: React.FC<ApplicationModalProps> = ({
             name: cvFile.name,
             size: cvFile.size,
             type: cvFile.type,
-            // In a real app, you'd upload to cloud storage and store the URL
-            url: `cv_uploads/${user.uid}_${Date.now()}_${cvFile.name}`
+            // CV file upload is NOT implemented yet: no Firebase Storage
+            // is configured, so the file itself is never uploaded. Record
+            // only its metadata and mark the upload pending — never store
+            // a fabricated storage path as if the upload had happened.
+            // Real file upload arrives in Phase 2.
+            url: null,
+            status: 'pending-upload'
           },
           coverLetter,
           additionalInfo
@@ -207,10 +212,6 @@ const ApplicationModal: React.FC<ApplicationModalProps> = ({
         });
       }
 
-      console.log('Application submitted successfully!');
-      console.log('User UID:', user.uid);
-      console.log('Job ID:', job.id);
-      
       setSuccess(true);
       setTimeout(() => {
         onApplicationSubmitted();
@@ -420,6 +421,13 @@ const ApplicationModal: React.FC<ApplicationModalProps> = ({
             <div className="space-y-6">
               <h3 className="text-lg font-semibold text-gray-900">CV Upload</h3>
               
+              <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-lg text-sm">
+                CV file upload is not available yet. Your application will be
+                submitted with your profile details, and the file itself is
+                not uploaded — only its name and size are recorded. File
+                upload is coming in Phase 2.
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Upload CV/Resume *
