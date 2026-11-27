@@ -1,87 +1,67 @@
 # Admin Login Guide
 
-## How admin access works
+This guide explains how to set up and use the admin panel. **The first admin must be set up in the Firebase console before deploying** — otherwise nobody can reach `/admin`.
 
-There is no admin sign-up and no admin access code. Admin is a role stored
-on the user's Firestore document, and it can only be granted by someone who
-is already an admin — or by creating an `admins/{uid}` document directly in
-the Firebase console.
+## Why the first admin is set up in the console
 
-The app reads the role from Firestore on every sign-in. A role saved in the
-browser (localStorage) is ignored.
+The admin role is read from the Firestore user document (`users/{uid}.role == 'admin'`). There is no admin code, no admin sign-up form, and no self-promotion path: the old hardcoded admin code (`ADMIN2024`) was removed in Phase 1 because anyone who knew it could make themselves an admin.
 
-## Granting admin access
+The only way in is for someone who already has access to the Firebase console to mark an account as admin. After that, that admin can promote other users from the admin panel itself.
 
-### Method 1: Promote from the Admin Panel (recommended)
+## Setting up the first admin
 
-1. Sign in as an existing admin.
-2. Open the Admin Panel → Users tab.
-3. Use the promote action on the user you want to make an admin.
+### Option A — change the role in the Firestore console (recommended)
 
-Their user document's `role` becomes `admin`, and the Admin Panel and
-`/admin` route will recognise them on their next sign-in.
+1. Go to the [Firebase console](https://console.firebase.google.com/) and open the `job-seeker-80fd8` project.
+2. Open **Firestore Database → Data → users**.
+3. Find the document for your account (the document ID is your Firebase Auth uid).
+4. Change the `role` field from `jobseeker` or `employer` to `admin` and save.
+5. Sign out and sign back in (the role is read fresh on sign-in). Go to `/admin`.
 
-### Method 2: Firebase console (first admin / bootstrap)
+### Option B — add an `admins/{uid}` document
 
-Use this to create the very first admin, when nobody can promote yet:
+1. In the Firestore console, create a collection called `admins` (if it does not exist).
+2. Add a document whose ID is your Firebase Auth uid (any content, e.g. `{ "createdAt": "<today>" }`).
+3. Sign out and sign back in, then go to `/admin`.
 
-1. Go to Firebase Console → Authentication and copy the user's UID.
-2. Go to Firestore Database → `admins` collection.
-3. Create a document with ID = the user's UID, for example:
+Option B is useful if the `users` document does not exist yet, or if you want to keep the admin list separate from user profiles. Both paths are checked by the API and the Firestore rules.
 
-```javascript
-{
-  createdAt: "2025-01-01T00:00:00.000Z",
-  createdBy: "console"
-}
-```
+### The legacy admin email
 
-Alternatively, set `role: "admin"` on the user's document in the `users`
-collection. Either one grants admin access.
-
-4. Ask the user to sign out and sign back in.
+`admin@jobseeker.com` is still treated as an admin as an interim fallback. This exists only so a deployment is not locked out before the first admin is set up. Once the first admin exists, change that email check out of `functions/index.js` and `firestore.rules` (search for `admin@jobseeker.com`).
 
 ## Accessing the Admin Panel
 
-Once signed in as an admin:
+1. Sign in with the admin account.
+2. Go to `/admin` (the link also appears in the header for admins).
+3. The panel has four tabs:
+   - **Users** — search users, change roles (jobseeker / employer / admin), delete users. You cannot delete your own account from here.
+   - **Jobs** — search jobs, approve / reject / pending, delete jobs. Approving a job makes it active.
+   - **Companies** — verify or unverify employers (see below).
+   - **Reports** — user growth, employer growth, job posting counts, and a system-health panel. Note: the "API Response Time" (~120ms) and "Active Sessions" (24) figures in this tab are placeholders, not live measurements.
+   - **Settings** — platform toggles (auto-approval, email notifications, maintenance mode). These toggles currently do not persist or change behaviour; they are placeholders for a later phase.
 
-1. Navigate to `/admin` or click "Admin Panel" in the header.
-2. You will see the admin dashboard with:
-   - User management
-   - Job management
-   - Statistics and reports
-   - Greenhouse integration
-   - Settings
+## Verifying an employer (company verification)
+
+Phase 2 adds a minimal employer verification flow:
+
+1. Go to **Admin Panel → Companies**.
+2. Each row is one employer account, with the company name (from the company record created at employer sign-up) and its current verification state.
+3. Click **Verify** to mark the company verified, or **Unverify** to remove it.
+
+What verification does:
+
+- A green **✓ Verified** badge appears next to the company name on the company profile page and on job listings for that employer's jobs.
+- Nothing else changes: verification does not approve jobs, change permissions, or affect search ranking.
+
+Rules:
+
+- Only an admin can change `verified`. An employer who edits their own company record cannot set it — the Firestore rules reject any owner update that touches the `verified` field, and the API never sets it.
+- If an employer signed up before company records existed (or signed up with Google, which creates no company record), they appear in the list as "No company record yet". Verifying them creates the company document with their name.
+- Verification is reversible — Unverify removes the badge immediately.
 
 ## Troubleshooting
 
-### "Access Denied" error
-
-If you see "Access Denied":
-
-- Check the user's document in the `users` collection: `role` must be
-  `"admin"`, or an `admins/{uid}` document must exist.
-- Sign out and sign back in so the role is re-read from Firestore.
-- Do not edit localStorage — the app ignores it.
-
-### Can't see the Admin Panel link
-
-- Confirm the signed-in account actually has the admin role (see above).
-- Clear browser cache and cookies, then sign in again.
-- Check the browser console for errors.
-
-### Role not updating
-
-- Sign out and sign back in.
-- Verify the Firestore user document's `role` field.
-
-## Security notes
-
-- Never share admin credentials, and never put an admin code or password in
-  the codebase or in documentation. (A hardcoded admin code used to exist
-  in this project; it was removed in Phase 1.)
-- Admin actions are enforced server-side: the API checks the caller's
-  Firebase ID token, and Firestore rules only allow admins to change roles
-  or delete users.
-- Review the `admins` collection and the list of users with `role: "admin"`
-  regularly.
+- **"You are redirected to the home page when you open /admin"** — the signed-in account is not an admin. Check the `role` field on your `users` document (Option A) or the `admins` collection (Option B), then sign out and back in.
+- **"I changed the role but /admin still redirects me"** — the role is read on sign-in. Sign out and sign back in; a hard refresh alone is not enough.
+- **"The Companies tab is empty"** — there are no accounts with role `employer` yet. Sign up a test employer account first.

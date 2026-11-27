@@ -1,0 +1,48 @@
+rules_version = '2';
+
+// Firebase Storage rules — Phase 2 (new file).
+// Resumes and per-application CVs are private to their owner. An employer
+// sees a candidate's CV through the download URL stored on the application
+// record (which they are authorised to read); the URL is an unguessable
+// token, which is how Firebase Storage download URLs work.
+//
+// The create/update rule and the read rule are split because
+// `request.resource` is null on reads and deletes — a single combined
+// `allow read, create` would crash on read.
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isResumeOrCv() {
+      return request.resource.contentType.matches('application/pdf')
+        || request.resource.contentType.matches('application/msword')
+        || request.resource.contentType.matches(
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    }
+
+    // A jobseeker's own resume, uploaded at sign-up or from their profile.
+    match /resumes/{uid}/{fileName} {
+      allow read: if isOwner(uid);
+      allow create, update: if isOwner(uid)
+        && request.resource.size < 5 * 1024 * 1024
+        && isResumeOrCv();
+      allow delete: if isOwner(uid);
+    }
+
+    // A CV attached to a specific application, uploaded from the apply modal.
+    match /cvs/{uid}/{fileName} {
+      allow read: if isOwner(uid);
+      allow create, update: if isOwner(uid)
+        && request.resource.size < 5 * 1024 * 1024
+        && isResumeOrCv();
+      allow delete: if isOwner(uid);
+    }
+  }
+}

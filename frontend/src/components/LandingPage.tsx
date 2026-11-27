@@ -20,7 +20,7 @@ const LandingPage: React.FC = () => {
   useEffect(() => {
     const fetchFeaturedJobs = async () => {
       try {
-        const data = await getJobs(0, 8);
+        const data = await getJobs(null, 8);
         setFeaturedJobs(data.jobs || []);
       } catch (error) {
         console.error('Error fetching featured jobs:', error);

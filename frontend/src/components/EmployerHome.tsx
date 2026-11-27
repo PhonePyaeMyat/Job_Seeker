@@ -1,14 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { useAuthState } from 'react-firebase-hooks/auth';
-import { auth, db } from '../firebaseConfig';
-import { 
-  collection,
-  getDocs,
-  query,
-  where,
-  limit
-} from 'firebase/firestore';
 import { Link } from 'react-router-dom';
+import { auth, db } from '../firebaseConfig';
+import { useAuthState } from 'react-firebase-hooks/auth';
+import { collection, query, where, getDocs } from 'firebase/firestore';
+import { getEmployerApplications, Application } from '../services/jobService';
 
 interface Job {
   id: string;
@@ -17,523 +12,471 @@ interface Job {
   location: string;
   type: string;
   salary: string;
-  postedDate: string;
   description: string;
   active: boolean;
+  postedDate: string;
+  expiryDate: string;
   applicants: string[];
-  status: 'approved' | 'pending' | 'rejected';
-  featured?: boolean;
+  status?: string;
+  companyId?: string;
 }
 
-interface Application {
-  id: string;
-  jobId: string;
-  jobTitle: string;
-  applicantName: string;
-  applicantEmail: string;
-  appliedDate: string;
-  status: 'pending' | 'reviewed' | 'accepted' | 'rejected';
-}
-
-interface EnhancedStats {
+interface DashboardStats {
   totalJobs: number;
   activeJobs: number;
   totalApplications: number;
   newApplicationsToday: number;
   newApplicationsThisWeek: number;
-  applicationRate: number; // applications per job
-  averageTimeToFill: number; // days
-  jobsNeedingAttention: number; // jobs with no applications
-  recentlyFilled: number; // jobs filled in last 30 days
+  averageApplicationsPerJob: number;
+  jobsNeedingAttention: number;
+  recentlyFilled: number;
+}
+
+interface RecentActivity {
+  id: string;
+  type: 'application' | 'job' | 'interview' | 'offer';
+  message: string;
+  time: string;
+  jobTitle?: string;
 }
 
 const EmployerHome: React.FC = () => {
-  const [user, userLoading] = useAuthState(auth);
-  const [loading, setLoading] = useState(true);
+  const [user] = useAuthState(auth);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
-  const [stats, setStats] = useState<EnhancedStats>({
+  const [stats, setStats] = useState<DashboardStats>({
     totalJobs: 0,
     activeJobs: 0,
     totalApplications: 0,
     newApplicationsToday: 0,
     newApplicationsThisWeek: 0,
-    applicationRate: 0,
-    averageTimeToFill: 0,
+    averageApplicationsPerJob: 0,
     jobsNeedingAttention: 0,
-    recentlyFilled: 0
+    recentlyFilled: 0,
   });
-  const [recentActivity, setRecentActivity] = useState<any[]>([]);
-
-  // Debug logging
-  console.log('EmployerHome - User:', user?.email, 'Role:', localStorage.getItem('role'));
+  const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    if (!user) {
-      setLoading(false);
-      return;
+    if (user) {
+      loadEmployerData();
     }
-
-    loadEmployerData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   const loadEmployerData = async () => {
+    if (!user) return;
+
     try {
       setLoading(true);
-      await Promise.all([
+      const [jobsData, applicationsData] = await Promise.all([
         loadJobs(),
-        loadApplications()
+        loadApplications(),
       ]);
-      // Calculate stats and activity after data is loaded
-      await calculateStats();
-      generateRecentActivity();
+      setJobs(jobsData);
+      setApplications(applicationsData);
+      // Stats and activity are computed from the returned data, not from
+      // state — setState is async, so reading state right after setting it
+      // would use the previous (stale) values (Phase 2 fix).
+      calculateStats(applicationsData, jobsData);
+      generateRecentActivity(applicationsData, jobsData);
     } catch (err: any) {
-      console.error('Error loading employer data:', err);
+      setError(err.message || 'Failed to load dashboard data');
     } finally {
       setLoading(false);
     }
   };
 
-  const loadJobs = async () => {
-    try {
-      // Use companyId instead of company name to avoid index issues
-      const q = query(
-        collection(db, 'jobs'),
-        where('companyId', '==', user?.uid || ''),
-        limit(5)
-      );
-      const snapshot = await getDocs(q);
-      const jobsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        status: doc.data().status || 'approved',
-        active: doc.data().active || false,
-        applicants: doc.data().applicants || []
-      } as Job));
-      
-      // Sort by postedDate on the client side to avoid index requirement
-      const sortedJobs = jobsData.sort((a, b) => 
-        new Date(b.postedDate).getTime() - new Date(a.postedDate).getTime()
-      );
-      
-      setJobs(sortedJobs);
-    } catch (err) {
-      console.error('Error loading jobs:', err);
-    }
+  const loadJobs = async (): Promise<Job[]> => {
+    if (!user) return [];
+    const jobsQuery = query(
+      collection(db, 'jobs'),
+      where('companyId', '==', user.uid)
+    );
+    const jobsSnapshot = await getDocs(jobsQuery);
+    return jobsSnapshot.docs.map((docSnapshot) => ({
+      id: docSnapshot.id,
+      ...docSnapshot.data(),
+    })) as Job[];
   };
 
-  const loadApplications = async () => {
-    try {
-      // First get all jobs by this employer
-      const jobsQuery = query(
-        collection(db, 'jobs'),
-        where('companyId', '==', user?.uid)
-      );
-      const jobsSnapshot = await getDocs(jobsQuery);
-      const jobIds = jobsSnapshot.docs.map(doc => doc.id);
-      
-      if (jobIds.length === 0) {
-        setApplications([]);
-        return;
-      }
-      
-      // Then get applications for those jobs
-      const q = query(
-        collection(db, 'applications'),
-        where('jobId', 'in', jobIds),
-        limit(5)
-      );
-      const snapshot = await getDocs(q);
-      const applicationsData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        status: doc.data().status || 'pending'
-      } as Application));
-      
-      // Sort by appliedDate on client side
-      const sortedApplications = applicationsData.sort((a, b) => 
-        new Date(b.appliedDate).getTime() - new Date(a.appliedDate).getTime()
-      );
-      
-      setApplications(sortedApplications);
-    } catch (err) {
-      console.error('Error loading applications:', err);
-      // Set empty array on error to prevent UI issues
-      setApplications([]);
-    }
+  const loadApplications = async (): Promise<Application[]> => {
+    if (!user) return [];
+    // The server-side endpoint returns all of this employer's applications
+    // (newest first) with real counts. This replaces the old query that
+    // fetched applications per job with `where('jobId', 'in', jobIds)`,
+    // which broke above 30 jobs and truncated the result to 5.
+    const result = await getEmployerApplications();
+    return result.applications;
   };
 
-  const calculateStats = async () => {
-    try {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
-      const weekAgo = new Date();
-      weekAgo.setDate(weekAgo.getDate() - 7);
-      weekAgo.setHours(0, 0, 0, 0);
+  const calculateStats = (applicationsData: Application[], jobsData: Job[]) => {
+    const totalJobs = jobsData.length;
+    const activeJobs = jobsData.filter((job) => job.active !== false).length;
+    const totalApplications = applicationsData.length;
 
-      const newApplicationsToday = applications.filter(app => 
-        new Date(app.appliedDate) >= today
-      ).length;
+    const now = new Date();
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+    const weekStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-      const newApplicationsThisWeek = applications.filter(app => 
-        new Date(app.appliedDate) >= weekAgo
-      ).length;
+    // Applications store the date as `appliedAt` (a Timestamp or ISO
+    // string) — the old code read a non-existent `appliedDate` field, so
+    // these counts were always 0.
+    const newApplicationsToday = applicationsData.filter((app) => {
+      const appliedDate = app.appliedAt?.toDate ? app.appliedAt.toDate() : new Date(app.appliedAt);
+      return appliedDate >= todayStart;
+    }).length;
 
-      const activeJobs = jobs.filter(j => j.active);
-      const applicationRate = activeJobs.length > 0 ? 
-        (applications.length / activeJobs.length) : 0;
+    const newApplicationsThisWeek = applicationsData.filter((app) => {
+      const appliedDate = app.appliedAt?.toDate ? app.appliedAt.toDate() : new Date(app.appliedAt);
+      return appliedDate >= weekStart;
+    }).length;
 
-      const jobsNeedingAttention = activeJobs.filter(job => 
-        (job.applicants?.length || 0) === 0
-      ).length;
+    const averageApplicationsPerJob = totalJobs > 0 ? totalApplications / totalJobs : 0;
 
-      // Calculate average time to fill (simplified - using job age for active jobs)
-      const averageTimeToFill = activeJobs.length > 0 ? 
-        activeJobs.reduce((sum, job) => {
-          const daysSincePosted = Math.floor(
-            (new Date().getTime() - new Date(job.postedDate).getTime()) / (1000 * 60 * 60 * 24)
-          );
-          return sum + daysSincePosted;
-        }, 0) / activeJobs.length : 0;
+    const jobsNeedingAttention = jobsData.filter((job) => {
+      const postedDate = new Date(job.postedDate);
+      const daysSincePosted = Math.floor((now.getTime() - postedDate.getTime()) / (1000 * 60 * 60 * 24));
+      return daysSincePosted > 30 && (job.applicants?.length || 0) < 5;
+    }).length;
 
-      // Recently filled jobs (jobs that are no longer active and had applications)
-      const recentlyFilled = jobs.filter(job => 
-        !job.active && (job.applicants?.length || 0) > 0
-      ).length;
+    const recentlyFilled = jobsData.filter((job) => {
+      const postedDate = new Date(job.postedDate);
+      const daysSincePosted = Math.floor((now.getTime() - postedDate.getTime()) / (1000 * 60 * 60 * 24));
+      return daysSincePosted < 30 && (job.applicants?.length || 0) > 0;
+    }).length;
 
-      setStats({
-        totalJobs: jobs.length,
-        activeJobs: activeJobs.length,
-        totalApplications: applications.length,
-        newApplicationsToday,
-        newApplicationsThisWeek,
-        applicationRate: Math.round(applicationRate * 10) / 10,
-        averageTimeToFill: Math.round(averageTimeToFill),
-        jobsNeedingAttention,
-        recentlyFilled
-      });
-    } catch (err) {
-      console.error('Error calculating stats:', err);
-    }
+    setStats({
+      totalJobs,
+      activeJobs,
+      totalApplications,
+      newApplicationsToday,
+      newApplicationsThisWeek,
+      averageApplicationsPerJob: Math.round(averageApplicationsPerJob * 10) / 10,
+      jobsNeedingAttention,
+      recentlyFilled,
+    });
   };
 
-  const generateRecentActivity = () => {
-    const activities: any[] = [];
-    
-    // Add recent applications
-    applications.slice(0, 3).forEach(app => {
+  const generateRecentActivity = (applicationsData: Application[], jobsData: Job[]) => {
+    const activities: RecentActivity[] = [];
+
+    // Recent applications (newest first)
+    applicationsData.slice(0, 5).forEach((app) => {
+      const appliedDate = app.appliedAt?.toDate ? app.appliedAt.toDate() : new Date(app.appliedAt);
       activities.push({
         id: `app-${app.id}`,
         type: 'application',
-        title: `New application for ${app.jobTitle}`,
-        subtitle: `From ${app.applicantName}`,
-        time: app.appliedDate,
-        icon: '👤',
-        color: 'blue'
+        message: `${app.userName} applied to ${app.jobTitle}`,
+        time: appliedDate.toLocaleDateString(),
+        jobTitle: app.jobTitle,
       });
     });
 
-    // Add jobs needing attention
-    const jobsNeedingAttention = jobs.filter(job => 
-      job.active && (job.applicants?.length || 0) === 0
-    );
-    
-    jobsNeedingAttention.slice(0, 2).forEach(job => {
-      const daysSincePosted = Math.floor(
-        (new Date().getTime() - new Date(job.postedDate).getTime()) / (1000 * 60 * 60 * 24)
-      );
+    // Recent jobs
+    jobsData.slice(0, 3).forEach((job) => {
       activities.push({
         id: `job-${job.id}`,
-        type: 'job_attention',
-        title: `${job.title} needs attention`,
-        subtitle: `Posted ${daysSincePosted} days ago, no applications yet`,
-        time: job.postedDate,
-        icon: '⚠️',
-        color: 'orange'
+        type: 'job',
+        message: `You posted ${job.title}`,
+        time: new Date(job.postedDate).toLocaleDateString(),
+        jobTitle: job.title,
       });
     });
 
-    // Sort by time (most recent first)
+    // Sort by time (most recent first) and take top 8
     activities.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
-    
-    setRecentActivity(activities.slice(0, 5));
+    setRecentActivity(activities.slice(0, 8));
   };
 
-  if (userLoading || loading) {
-    return (
-      <div className="flex justify-center items-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-      </div>
-    );
-  }
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'pending':
+        return 'bg-yellow-100 text-yellow-800';
+      case 'interview':
+        return 'bg-blue-100 text-blue-800';
+      case 'offer':
+        return 'bg-green-100 text-green-800';
+      case 'rejected':
+        return 'bg-red-100 text-red-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
+  };
 
-  if (!user) {
-    return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="text-center">
-          <h1 className="text-3xl font-bold text-gray-800 mb-4">Welcome to Job Seeker</h1>
-          <p className="text-gray-600 mb-8">Please log in to access your employer dashboard</p>
-          <Link
-            to="/login"
-            className="inline-block bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            Login
-          </Link>
-        </div>
-      </div>
-    );
+  const getActivityIcon = (type: string) => {
+    switch (type) {
+      case 'application':
+        return '📄';
+      case 'job':
+        return '💼';
+      case 'interview':
+        return '🎯';
+      case 'offer':
+        return '🎉';
+      default:
+        return '📋';
+    }
+  };
+
+  if (loading) {
+    return <div className="text-center py-8">Loading dashboard...</div>;
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      {/* Hero Section */}
-      <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg p-8 mb-8">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-4xl font-bold mb-4">Welcome back, {user.displayName || 'Employer'}!</h1>
-            <p className="text-xl mb-6">Manage your job postings and find the perfect candidates</p>
-            <div className="flex space-x-4">
-              <Link
-                to="/post-job"
-                className="bg-white text-blue-600 px-6 py-3 rounded-lg font-semibold hover:bg-gray-100 transition-colors"
-              >
-                Post New Job
-              </Link>
-              <Link
-                to="/profile"
-                className="border-2 border-white text-white px-6 py-3 rounded-lg font-semibold hover:bg-white hover:text-blue-600 transition-colors"
-              >
-                Update Profile
-              </Link>
-            </div>
-          </div>
-          <div className="hidden md:block">
-            <div className="w-32 h-32 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
-              <svg className="w-16 h-16 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2-2v2m8 0H8m8 0v2a2 2 0 01-2 2H10a2 2 0 01-2-2V6" />
-              </svg>
-            </div>
-          </div>
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="flex justify-between items-center mb-8">
+        <div>
+          <h1 className="text-3xl font-bold">Welcome back, {user?.displayName || user?.email?.split('@')[0] || 'Employer'}!</h1>
+          <p className="text-gray-600 mt-2">Here's what's happening with your job postings today.</p>
         </div>
+        <Link
+          to="/post-job"
+          className="bg-blue-600 text-white px-6 py-3 rounded-md hover:bg-blue-700 font-medium"
+        >
+          Post New Job
+        </Link>
       </div>
 
-      {/* Enhanced Stats Cards */}
+      {error && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-6">
+          {error}
+        </div>
+      )}
+
+      {/* Stats Overview */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        {/* Total Jobs */}
-        <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-blue-500">
+        <div className="bg-white p-6 rounded-lg shadow">
           <div className="flex items-center">
-            <div className="flex-1">
+            <div className="p-3 rounded-full bg-blue-100 text-blue-600">
+              <span className="text-2xl">💼</span>
+            </div>
+            <div className="ml-4">
               <p className="text-sm font-medium text-gray-600">Total Jobs</p>
               <p className="text-2xl font-bold text-gray-900">{stats.totalJobs}</p>
-            </div>
-            <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
-              <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2-2v2m8 0H8m8 0v2a2 2 0 01-2 2H10a2 2 0 01-2-2V6" />
-              </svg>
+              <p className="text-sm text-gray-500">{stats.activeJobs} active</p>
             </div>
           </div>
-          <p className="text-xs text-gray-500 mt-2">{stats.activeJobs} active • {stats.recentlyFilled} filled</p>
         </div>
 
-        {/* Applications */}
-        <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-green-500">
+        <div className="bg-white p-6 rounded-lg shadow">
           <div className="flex items-center">
-            <div className="flex-1">
-              <p className="text-sm font-medium text-gray-600">Applications</p>
+            <div className="p-3 rounded-full bg-green-100 text-green-600">
+              <span className="text-2xl">📄</span>
+            </div>
+            <div className="ml-4">
+              <p className="text-sm font-medium text-gray-600">Total Applications</p>
               <p className="text-2xl font-bold text-gray-900">{stats.totalApplications}</p>
-            </div>
-            <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
-              <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
+              <p className="text-sm text-gray-500">{stats.newApplicationsToday} new today</p>
             </div>
           </div>
-          <p className="text-xs text-gray-500 mt-2">+{stats.newApplicationsToday} today • +{stats.newApplicationsThisWeek} this week</p>
         </div>
 
-        {/* Application Rate */}
-        <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-purple-500">
+        <div className="bg-white p-6 rounded-lg shadow">
           <div className="flex items-center">
-            <div className="flex-1">
-              <p className="text-sm font-medium text-gray-600">Application Rate</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.applicationRate}</p>
+            <div className="p-3 rounded-full bg-purple-100 text-purple-600">
+              <span className="text-2xl">📈</span>
             </div>
-            <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center">
-              <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-              </svg>
+            <div className="ml-4">
+              <p className="text-sm font-medium text-gray-600">This Week</p>
+              <p className="text-2xl font-bold text-gray-900">{stats.newApplicationsThisWeek}</p>
+              <p className="text-sm text-gray-500">New applications</p>
             </div>
           </div>
-          <p className="text-xs text-gray-500 mt-2">Applications per job</p>
         </div>
 
-        {/* Jobs Needing Attention */}
-        <div className="bg-white rounded-lg shadow-sm p-6 border-l-4 border-orange-500">
+        <div className="bg-white p-6 rounded-lg shadow">
           <div className="flex items-center">
-            <div className="flex-1">
-              <p className="text-sm font-medium text-gray-600">Need Attention</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.jobsNeedingAttention}</p>
+            <div className="p-3 rounded-full bg-orange-100 text-orange-600">
+              <span className="text-2xl">⭐</span>
             </div>
-            <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
-              <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
-              </svg>
+            <div className="ml-4">
+              <p className="text-sm font-medium text-gray-600">Avg. per Job</p>
+              <p className="text-2xl font-bold text-gray-900">{stats.averageApplicationsPerJob}</p>
+              <p className="text-sm text-gray-500">Applications per job</p>
             </div>
           </div>
-          <p className="text-xs text-gray-500 mt-2">Jobs with no applications</p>
         </div>
       </div>
 
-      {/* Recent Activity Feed */}
-      {recentActivity.length > 0 && (
-        <div className="bg-white rounded-lg shadow-sm p-6 mb-8">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">Recent Activity</h3>
-            <span className="text-sm text-gray-500">Live updates</span>
+      {/* Quick Actions */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <Link to="/post-job" className="bg-white p-6 rounded-lg shadow hover:shadow-md transition-shadow">
+          <div className="flex items-center">
+            <div className="p-3 rounded-full bg-blue-100 text-blue-600">
+              <span className="text-2xl">➕</span>
+            </div>
+            <div className="ml-4">
+              <h3 className="text-lg font-semibold">Post a Job</h3>
+              <p className="text-sm text-gray-600">Create a new job posting</p>
+            </div>
           </div>
-          <div className="space-y-3">
-            {recentActivity.map((activity) => (
-              <div key={activity.id} className="flex items-start space-x-3 p-3 rounded-lg hover:bg-gray-50 transition-colors">
-                <div className="flex-shrink-0">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm ${
-                    activity.color === 'blue' ? 'bg-blue-100 text-blue-600' :
-                    activity.color === 'orange' ? 'bg-orange-100 text-orange-600' :
-                    'bg-gray-100 text-gray-600'
-                  }`}>
-                    {activity.icon}
+        </Link>
+
+        <Link to="/dashboard" className="bg-white p-6 rounded-lg shadow hover:shadow-md transition-shadow">
+          <div className="flex items-center">
+            <div className="p-3 rounded-full bg-green-100 text-green-600">
+              <span className="text-2xl">📊</span>
+            </div>
+            <div className="ml-4">
+              <h3 className="text-lg font-semibold">View Analytics</h3>
+              <p className="text-sm text-gray-600">Detailed insights and reports</p>
+            </div>
+          </div>
+        </Link>
+
+        <Link to="/profile" className="bg-white p-6 rounded-lg shadow hover:shadow-md transition-shadow">
+          <div className="flex items-center">
+            <div className="p-3 rounded-full bg-purple-100 text-purple-600">
+              <span className="text-2xl">🏢</span>
+            </div>
+            <div className="ml-4">
+              <h3 className="text-lg font-semibold">Company Profile</h3>
+              <p className="text-sm text-gray-600">Update your company info</p>
+            </div>
+          </div>
+        </Link>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* Recent Applications */}
+        <div className="bg-white rounded-lg shadow">
+          <div className="px-6 py-4 border-b flex justify-between items-center">
+            <h2 className="text-xl font-semibold">Recent Applications</h2>
+            <Link to="/dashboard" className="text-blue-600 hover:text-blue-800 text-sm font-medium">
+              View All →
+            </Link>
+          </div>
+          {applications.length === 0 ? (
+            <div className="px-6 py-8 text-center">
+              <p className="text-gray-500">No applications yet.</p>
+              <p className="text-sm text-gray-400 mt-2">Applications will appear here once candidates apply to your jobs.</p>
+            </div>
+          ) : (
+            <div className="divide-y">
+              {applications.slice(0, 5).map((app) => (
+                <div key={app.id} className="px-6 py-4">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h3 className="font-medium">{app.userName}</h3>
+                      <p className="text-sm text-gray-600">{app.userEmail}</p>
+                      <p className="text-sm text-gray-500">Applied to {app.jobTitle}</p>
+                      <p className="text-xs text-gray-400">
+                        {app.appliedAt?.toDate
+                          ? app.appliedAt.toDate().toLocaleDateString()
+                          : new Date(app.appliedAt).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(app.status)}`}>
+                      {app.status}
+                    </span>
                   </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900">{activity.title}</p>
-                  <p className="text-sm text-gray-500">{activity.subtitle}</p>
-                  <p className="text-xs text-gray-400 mt-1">
-                    {new Date(activity.time).toLocaleDateString()} at {new Date(activity.time).toLocaleTimeString()}
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Recent Activity */}
+        <div className="bg-white rounded-lg shadow">
+          <div className="px-6 py-4 border-b">
+            <h2 className="text-xl font-semibold">Recent Activity</h2>
+          </div>
+          {recentActivity.length === 0 ? (
+            <div className="px-6 py-8 text-center">
+              <p className="text-gray-500">No recent activity.</p>
+            </div>
+          ) : (
+            <div className="divide-y">
+              {recentActivity.map((activity) => (
+                <div key={activity.id} className="px-6 py-4 flex items-start">
+                  <span className="text-2xl mr-3">{getActivityIcon(activity.type)}</span>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">{activity.message}</p>
+                    <p className="text-xs text-gray-500">{activity.time}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Your Jobs */}
+      <div className="bg-white rounded-lg shadow mt-8">
+        <div className="px-6 py-4 border-b flex justify-between items-center">
+          <h2 className="text-xl font-semibold">Your Jobs</h2>
+          <Link to="/dashboard" className="text-blue-600 hover:text-blue-800 text-sm font-medium">
+            Manage All →
+          </Link>
+        </div>
+        {jobs.length === 0 ? (
+          <div className="px-6 py-8 text-center">
+            <p className="text-gray-500">You haven't posted any jobs yet.</p>
+            <Link
+              to="/post-job"
+              className="mt-4 inline-block bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+            >
+              Post Your First Job
+            </Link>
+          </div>
+        ) : (
+          <div className="divide-y">
+            {jobs.slice(0, 5).map((job) => (
+              <div key={job.id} className="px-6 py-4 flex justify-between items-center">
+                <div>
+                  <h3 className="font-semibold">{job.title}</h3>
+                  <p className="text-sm text-gray-600">
+                    {job.location} • {job.type} • {job.salary}
                   </p>
+                  <p className="text-sm text-gray-500">
+                    {job.applicants?.length || 0} applicants • Posted {new Date(job.postedDate).toLocaleDateString()}
+                  </p>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <span className={`px-2 py-1 rounded-full text-xs ${
+                    job.active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                  }`}>
+                    {job.active ? 'Active' : 'Inactive'}
+                  </span>
+                  <Link
+                    to={`/jobs/${job.id}`}
+                    className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                  >
+                    View
+                  </Link>
                 </div>
               </div>
             ))}
           </div>
+        )}
+      </div>
+
+      {/* Insights */}
+      {(stats.jobsNeedingAttention > 0 || stats.recentlyFilled > 0) && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mt-8">
+          <h3 className="text-lg font-semibold text-blue-900 mb-4">💡 Insights</h3>
+          <div className="space-y-2">
+            {stats.jobsNeedingAttention > 0 && (
+              <p className="text-blue-800">
+                • You have {stats.jobsNeedingAttention} job{stats.jobsNeedingAttention > 1 ? 's' : ''} posted 30+ days ago with fewer than 5 applicants. Consider updating the job description or salary.
+              </p>
+            )}
+            {stats.recentlyFilled > 0 && (
+              <p className="text-blue-800">
+                • {stats.recentlyFilled} of your jobs posted in the last 30 days have received applications. Great job!
+              </p>
+            )}
+            {stats.averageApplicationsPerJob > 10 && (
+              <p className="text-blue-800">
+                • Your jobs are getting good traction with an average of {stats.averageApplicationsPerJob} applications per job.
+              </p>
+            )}
+          </div>
         </div>
       )}
-
-      {/* Quick Actions */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-        {/* Recent Jobs */}
-        <div className="bg-white rounded-lg shadow-sm p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">Recent Job Postings</h3>
-            <Link
-              to="/post-job"
-              className="text-blue-600 hover:text-blue-800 text-sm font-medium"
-            >
-              Post New Job
-            </Link>
-          </div>
-          <div className="space-y-3">
-            {jobs.length === 0 ? (
-              <div className="text-center py-8">
-                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2-2v2m8 0H8m8 0v2a2 2 0 01-2 2H10a2 2 0 01-2-2V6" />
-                  </svg>
-                </div>
-                <p className="text-gray-500 mb-4">No jobs posted yet</p>
-                <Link
-                  to="/post-job"
-                  className="inline-block bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  Post Your First Job
-                </Link>
-              </div>
-            ) : (
-              jobs.map(job => (
-                <div key={job.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <div>
-                    <p className="font-medium text-sm text-gray-900">{job.title}</p>
-                    <p className="text-xs text-gray-500">{job.location} • {job.type}</p>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      job.status === 'approved' ? 'bg-green-100 text-green-800' :
-                      job.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                      'bg-red-100 text-red-800'
-                    }`}>
-                      {job.status}
-                    </span>
-                    <span className="text-xs text-gray-500">
-                      {job.applicants?.length || 0} applications
-                    </span>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-
-        {/* Recent Applications */}
-        <div className="bg-white rounded-lg shadow-sm p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">Recent Applications</h3>
-            <Link
-              to="/profile"
-              className="text-blue-600 hover:text-blue-800 text-sm font-medium"
-            >
-              Manage Profile
-            </Link>
-          </div>
-          <div className="space-y-3">
-            {applications.length === 0 ? (
-              <div className="text-center py-8">
-                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                </div>
-                <p className="text-gray-500">No applications yet</p>
-              </div>
-            ) : (
-              applications.map(application => (
-                <div key={application.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <div>
-                    <p className="font-medium text-sm text-gray-900">{application.applicantName}</p>
-                    <p className="text-xs text-gray-500">Applied to {application.jobTitle}</p>
-                  </div>
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                    application.status === 'accepted' ? 'bg-green-100 text-green-800' :
-                    application.status === 'rejected' ? 'bg-red-100 text-red-800' :
-                    application.status === 'reviewed' ? 'bg-blue-100 text-blue-800' :
-                    'bg-yellow-100 text-yellow-800'
-                  }`}>
-                    {application.status}
-                  </span>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Call to Action */}
-      <div className="bg-gray-50 rounded-lg p-8 text-center">
-        <h3 className="text-2xl font-bold text-gray-900 mb-4">Ready to find your next great hire?</h3>
-        <p className="text-gray-600 mb-6">Post a job and start receiving applications from qualified candidates</p>
-        <div className="flex flex-col sm:flex-row gap-4 justify-center">
-          <Link
-            to="/post-job"
-            className="bg-blue-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
-          >
-            Post a Job
-          </Link>
-          <Link
-            to="/profile"
-            className="border border-gray-300 text-gray-700 px-8 py-3 rounded-lg font-semibold hover:bg-gray-100 transition-colors"
-          >
-            Update Company Profile
-          </Link>
-        </div>
-      </div>
     </div>
   );
 };
