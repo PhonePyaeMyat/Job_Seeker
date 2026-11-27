@@ -14,22 +14,7 @@ import {
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import AdvancedJobSearch from './AdvancedJobSearch';
 import JobCard from './JobCard';
-import { applyToJob, applySearchFilters, SearchFilters } from '../services/jobService';
-
-interface Job {
-  id: string;
-  title: string;
-  company: string;
-  location: string;
-  type: string;
-  salary: string;
-  postedDate: string;
-  description: string;
-  active: boolean;
-  applicants: string[];
-  status: 'approved' | 'pending' | 'rejected';
-  featured?: boolean;
-}
+import { applyToJob, applySearchFilters, SearchFilters, Job } from '../services/jobService';
 
 interface JobSeekerStats {
   totalJobs: number;
