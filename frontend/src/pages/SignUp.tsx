@@ -5,7 +5,7 @@ import { doc, setDoc } from 'firebase/firestore';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 
 interface BaseForm {
-  role: 'jobseeker' | 'employer' | 'admin';
+  role: 'jobseeker' | 'employer';
   fullName: string;
   email: string;
   password: string;
@@ -30,12 +30,7 @@ interface EmployerForm extends BaseForm {
   industry: string;
 }
 
-interface AdminForm extends BaseForm {
-  role: 'admin';
-  adminCode: string;
-}
-
-type SignUpForm = JobSeekerForm | EmployerForm | AdminForm;
+type SignUpForm = JobSeekerForm | EmployerForm;
 
 const SignUp: React.FC = () => {
   const [form, setForm] = useState<SignUpForm>({
@@ -137,17 +132,6 @@ const SignUp: React.FC = () => {
       }
     }
 
-    if (form.role === 'admin') {
-      if (!form.adminCode.trim()) {
-        setError('Please enter the admin access code');
-        return false;
-      }
-      if (form.adminCode !== 'ADMIN2024') {
-        setError('Invalid admin access code');
-        return false;
-      }
-    }
-
     return true;
   };
 
@@ -191,11 +175,9 @@ const SignUp: React.FC = () => {
       }
       
       await setDoc(doc(db, 'users', user.uid), userData);
-      localStorage.setItem('role', form.role);
-      
-      // Trigger a custom event to notify App component of role change
-      window.dispatchEvent(new CustomEvent('roleChanged', { detail: { role: form.role } }));
-      
+
+      // The role is read back from this Firestore document on sign-in
+      // (see userService.getUserRole). Nothing is cached in localStorage.
       setSuccess(true);
       setTimeout(() => {
         // Redirect based on role
@@ -263,11 +245,9 @@ const SignUp: React.FC = () => {
       }
       
       await setDoc(doc(db, 'users', user.uid), userData);
-      localStorage.setItem('role', form.role);
-      
-      // Trigger a custom event to notify App component of role change
-      window.dispatchEvent(new CustomEvent('roleChanged', { detail: { role: form.role } }));
-      
+
+      // The role is read back from this Firestore document on sign-in
+      // (see userService.getUserRole). Nothing is cached in localStorage.
       setSuccess(true);
       setTimeout(() => {
         // Redirect based on role
@@ -487,26 +467,6 @@ const SignUp: React.FC = () => {
       );
     }
 
-    if (form.role === 'admin') {
-      return (
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Admin Access Code
-          </label>
-                        <input 
-            type="password"
-            name="adminCode"
-            value={form.adminCode}
-                          onChange={handleChange} 
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-            placeholder="Enter admin access code"
-            required
-          />
-          <p className="text-xs text-gray-500 mt-1">Contact system administrator for access code</p>
-        </div>
-      );
-    }
-
     return null;
   };
 
@@ -519,7 +479,6 @@ const SignUp: React.FC = () => {
           <p className="text-gray-600">
             {form.role === 'jobseeker' && 'Join thousands of professionals finding their next opportunity'}
             {form.role === 'employer' && 'Connect with top talent and grow your team'}
-            {form.role === 'admin' && 'Access system administration and management tools'}
           </p>
           {redirectMessage && (
             <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
@@ -535,7 +494,7 @@ const SignUp: React.FC = () => {
             <label className="block text-sm font-medium text-gray-700 mb-3">
               I am a...
             </label>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
                 onClick={() => setForm(prev => ({ ...prev, role: 'jobseeker', phone: '', location: '', experience: '', skills: '', resume: null } as JobSeekerForm))}
@@ -569,24 +528,6 @@ const SignUp: React.FC = () => {
                             </svg>
                   <div className="font-medium">Employer</div>
                   <div className="text-xs text-gray-500">Hire top talent</div>
-                          </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setForm(prev => ({ ...prev, role: 'admin', adminCode: '' } as AdminForm))}
-                className={`p-4 rounded-lg border-2 transition-all ${
-                  form.role === 'admin'
-                    ? 'border-red-500 bg-red-50 text-red-700'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
-              >
-                <div className="text-center">
-                  <svg className="w-8 h-8 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                  </svg>
-                  <div className="font-medium">Admin</div>
-                  <div className="text-xs text-gray-500">System management</div>
                           </div>
               </button>
                     </div>

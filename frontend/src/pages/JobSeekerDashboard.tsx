@@ -1,27 +1,31 @@
 import React, { useState, useEffect } from 'react';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { auth } from '../firebaseConfig';
-import { collection, query, where, getDocs, getDoc, doc } from 'firebase/firestore';
+import { getDoc, doc } from 'firebase/firestore';
 import { db } from '../firebaseConfig';
 import { Link, useNavigate } from 'react-router-dom';
 import JobCard from '../components/JobCard';
+import { getUserApplications, getJobById, Application, Job } from '../services/jobService';
 
-interface Job {
-  id: string;
-  title: string;
-  company: string;
-  location: string;
-  type: string;
-  salary: string;
-  postedDate: string;
-  description: string;
-  applicants: string[];
+interface AppliedEntry {
+  application: Application;
+  job: Job;
 }
+
+const STATUS_LABELS: Record<Application['status'], { label: string; classes: string }> = {
+  pending: { label: 'Pending', classes: 'bg-yellow-100 text-yellow-800' },
+  interview: { label: 'Interview', classes: 'bg-blue-100 text-blue-800' },
+  offer: { label: 'Offer', classes: 'bg-green-100 text-green-800' },
+  rejected: { label: 'Rejected', classes: 'bg-red-100 text-red-800' },
+};
 
 const JobSeekerDashboard: React.FC = () => {
   const [user] = useAuthState(auth);
   const navigate = useNavigate();
-  const [appliedJobs, setAppliedJobs] = useState<Job[]>([]);
+  // Applications are the single source of truth for "applied": each entry
+  // carries the real appliedAt timestamp and the current status. The job's
+  // applicants array is only a membership list, not application data.
+  const [appliedEntries, setAppliedEntries] = useState<AppliedEntry[]>([]);
   const [savedJobs, setSavedJobs] = useState<Job[]>([]);
   const [savedJobIds, setSavedJobIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -40,8 +44,8 @@ const JobSeekerDashboard: React.FC = () => {
         setError(null);
 
         await Promise.all([
-          fetchAppliedJobs(),
-          fetchSavedJobs()
+          fetchApplications(),
+          fetchSavedJobs(),
         ]);
       } catch (err: any) {
         console.error('Error fetching dashboard data:', err);
@@ -52,25 +56,27 @@ const JobSeekerDashboard: React.FC = () => {
     };
 
     fetchDashboardData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
-  const fetchAppliedJobs = async () => {
+  const fetchApplications = async () => {
     if (!user) return;
 
     try {
-      // Query all jobs where the current user is in the applicants array
-      const jobsRef = collection(db, 'jobs');
-      const q = query(jobsRef, where('applicants', 'array-contains', user.uid));
-      const snapshot = await getDocs(q);
-      
-      const jobs: Job[] = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      } as Job));
-
-      setAppliedJobs(jobs);
+      const applications = await getUserApplications(user.uid);
+      const entries: AppliedEntry[] = [];
+      for (const application of applications) {
+        try {
+          const job = await getJobById(application.jobId);
+          entries.push({ application, job });
+        } catch (err) {
+          // The job was deleted; skip it rather than breaking the dashboard.
+          console.warn(`Failed to load job ${application.jobId}:`, err);
+        }
+      }
+      setAppliedEntries(entries);
     } catch (err: any) {
-      console.error('Error fetching applied jobs:', err);
+      console.error('Error fetching applications:', err);
       throw err;
     }
   };
@@ -88,23 +94,22 @@ const JobSeekerDashboard: React.FC = () => {
 
         if (savedIds.length > 0) {
           // Get the actual job data for saved jobs
-          const jobsRef = collection(db, 'jobs');
           const jobs: Job[] = [];
-          
+
           for (const jobId of savedIds) {
             try {
               const jobDoc = await getDoc(doc(db, 'jobs', jobId));
               if (jobDoc.exists()) {
                 jobs.push({
                   id: jobDoc.id,
-                  ...jobDoc.data()
+                  ...jobDoc.data(),
                 } as Job);
               }
             } catch (err) {
               console.warn(`Failed to load job ${jobId}:`, err);
             }
           }
-          
+
           setSavedJobs(jobs);
         } else {
           setSavedJobs([]);
@@ -123,22 +128,22 @@ const JobSeekerDashboard: React.FC = () => {
     if (isSaved) {
       setSavedJobIds(prev => [...prev, jobId]);
       // Find job in applied jobs list or fetch from Firestore
-      let jobToAdd = appliedJobs.find(j => j.id === jobId);
-      
+      let jobToAdd = appliedEntries.find(e => e.job.id === jobId)?.job;
+
       if (!jobToAdd) {
         try {
           const jobDoc = await getDoc(doc(db, 'jobs', jobId));
           if (jobDoc.exists()) {
             jobToAdd = {
               id: jobDoc.id,
-              ...jobDoc.data()
+              ...jobDoc.data(),
             } as Job;
           }
         } catch (error) {
           console.error('Error fetching job details:', error);
         }
       }
-      
+
       if (jobToAdd) {
         setSavedJobs(prev => {
           const exists = prev.some(job => job.id === jobId);
@@ -149,7 +154,7 @@ const JobSeekerDashboard: React.FC = () => {
       setSavedJobIds(prev => prev.filter(id => id !== jobId));
       setSavedJobs(prev => prev.filter(job => job.id !== jobId));
     }
-    
+
     // Refresh saved jobs from database to ensure consistency
     setTimeout(() => {
       fetchSavedJobs();
@@ -163,13 +168,14 @@ const JobSeekerDashboard: React.FC = () => {
     }
 
     try {
-      // Use the service function to apply to the job
+      // Use the service function to apply to the job. This creates a real
+      // application record (and updates the job's applicants array).
       const { applyToJob } = await import('../services/jobService');
       await applyToJob(jobId, user.uid);
-      
-      // Refresh the applied jobs list
-      await fetchAppliedJobs();
-      
+
+      // Refresh the applications list
+      await fetchApplications();
+
       alert('Application submitted successfully!');
     } catch (error) {
       console.error('Error applying to job:', error);
@@ -180,6 +186,9 @@ const JobSeekerDashboard: React.FC = () => {
   const handleViewMore = (jobId: string) => {
     navigate(`/jobs/${jobId}`);
   };
+
+  const interviewCount = appliedEntries.filter(e => e.application.status === 'interview').length;
+  const offerCount = appliedEntries.filter(e => e.application.status === 'offer').length;
 
   if (!user) {
     return (
@@ -192,7 +201,7 @@ const JobSeekerDashboard: React.FC = () => {
   return (
     <div className="max-w-6xl mx-auto mt-10 p-6">
       <h2 className="text-2xl font-bold mb-6">Job Seeker Dashboard</h2>
-      
+
       {/* User Info Section */}
       <div className="mb-8 p-4 bg-blue-50 rounded">
         <h3 className="font-semibold mb-2">Welcome back!</h3>
@@ -204,8 +213,8 @@ const JobSeekerDashboard: React.FC = () => {
         <div className="border-b border-gray-200">
           <nav className="-mb-px flex space-x-8 px-6">
             {[
-              { id: 'applied', label: 'Applied Jobs', count: appliedJobs.length },
-              { id: 'saved', label: 'Saved Jobs', count: savedJobs.length }
+              { id: 'applied', label: 'Applied Jobs', count: appliedEntries.length },
+              { id: 'saved', label: 'Saved Jobs', count: savedJobs.length },
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -237,12 +246,12 @@ const JobSeekerDashboard: React.FC = () => {
             <>
               {activeTab === 'applied' && (
                 <div>
-                  <h3 className="text-xl font-semibold mb-4">Applied Jobs ({appliedJobs.length})</h3>
-                  {appliedJobs.length === 0 ? (
+                  <h3 className="text-xl font-semibold mb-4">Applied Jobs ({appliedEntries.length})</h3>
+                  {appliedEntries.length === 0 ? (
                     <div className="bg-gray-100 p-6 rounded text-center">
                       <p className="text-gray-600 mb-4">You haven't applied to any jobs yet.</p>
-                      <Link 
-                        to="/" 
+                      <Link
+                        to="/"
                         className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
                       >
                         Browse Jobs
@@ -250,41 +259,49 @@ const JobSeekerDashboard: React.FC = () => {
                     </div>
                   ) : (
                     <div className="space-y-4">
-                      {appliedJobs.map(job => (
-                        <div key={job.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
-                          <div className="flex justify-between items-start">
-                            <div className="flex-1">
-                              <h4 className="text-lg font-semibold text-gray-800">
-                                <Link to={`/jobs/${job.id}`} className="hover:text-blue-600">
-                                  {job.title}
-                                </Link>
-                              </h4>
-                              <p className="text-gray-600">{job.company}</p>
-                              <p className="text-gray-500 text-sm">{job.location}</p>
+                      {appliedEntries.map(({ application, job }) => {
+                        const status = STATUS_LABELS[application.status] || STATUS_LABELS.pending;
+                        return (
+                          <div key={application.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                            <div className="flex justify-between items-start">
+                              <div className="flex-1">
+                                <h4 className="text-lg font-semibold text-gray-800">
+                                  <Link to={`/jobs/${job.id}`} className="hover:text-blue-600">
+                                    {job.title}
+                                  </Link>
+                                </h4>
+                                <p className="text-gray-600">{job.company}</p>
+                                <p className="text-gray-500 text-sm">{job.location}</p>
+                              </div>
+                              <div className="text-right">
+                                <span className={`inline-block text-xs font-medium px-2 py-1 rounded ${status.classes}`}>
+                                  {status.label}
+                                </span>
+                                <span className="inline-block bg-blue-100 text-blue-800 text-xs font-medium px-2 py-1 rounded ml-2">
+                                  {job.type}
+                                </span>
+                                {job.salary && (
+                                  <p className="text-sm text-gray-600 mt-1">{job.salary}</p>
+                                )}
+                              </div>
                             </div>
-                            <div className="text-right">
-                              <span className="inline-block bg-blue-100 text-blue-800 text-xs font-medium px-2 py-1 rounded">
-                                {job.type}
+                            <p className="text-gray-600 mt-2 line-clamp-2">{job.description}</p>
+                            <div className="mt-3 flex justify-between items-center">
+                              <span className="text-sm text-gray-500">
+                                Applied on {application.appliedAt
+                                  ? new Date(application.appliedAt).toLocaleDateString()
+                                  : 'Unknown date'}
                               </span>
-                              {job.salary && (
-                                <p className="text-sm text-gray-600 mt-1">{job.salary}</p>
-                              )}
+                              <Link
+                                to={`/jobs/${job.id}`}
+                                className="text-blue-600 hover:text-blue-800 text-sm font-medium"
+                              >
+                                View Details →
+                              </Link>
                             </div>
                           </div>
-                          <p className="text-gray-600 mt-2 line-clamp-2">{job.description}</p>
-                          <div className="mt-3 flex justify-between items-center">
-                            <span className="text-sm text-gray-500">
-                              Applied on {new Date(job.postedDate).toLocaleDateString()}
-                            </span>
-                            <Link 
-                              to={`/jobs/${job.id}`}
-                              className="text-blue-600 hover:text-blue-800 text-sm font-medium"
-                            >
-                              View Details →
-                            </Link>
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -296,8 +313,8 @@ const JobSeekerDashboard: React.FC = () => {
                   {savedJobs.length === 0 ? (
                     <div className="bg-gray-100 p-6 rounded text-center">
                       <p className="text-gray-600 mb-4">You haven't saved any jobs yet.</p>
-                      <Link 
-                        to="/" 
+                      <Link
+                        to="/"
                         className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
                       >
                         Browse Jobs
@@ -325,21 +342,24 @@ const JobSeekerDashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-8">
+      {/* Quick Stats — all counts are derived from real application records. */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-8">
         <div className="bg-blue-50 p-4 rounded">
           <h4 className="font-semibold text-blue-800">Applications</h4>
-          <p className="text-2xl font-bold text-blue-600">{appliedJobs.length}</p>
+          <p className="text-2xl font-bold text-blue-600">{appliedEntries.length}</p>
+        </div>
+        <div className="bg-indigo-50 p-4 rounded">
+          <h4 className="font-semibold text-indigo-800">Interviews</h4>
+          <p className="text-2xl font-bold text-indigo-600">{interviewCount}</p>
+        </div>
+        <div className="bg-green-50 p-4 rounded">
+          <h4 className="font-semibold text-green-800">Offers</h4>
+          <p className="text-2xl font-bold text-green-600">{offerCount}</p>
         </div>
         <div className="bg-yellow-50 p-4 rounded">
           <h4 className="font-semibold text-yellow-800">Saved Jobs</h4>
           <p className="text-2xl font-bold text-yellow-600">{savedJobs.length}</p>
           <p className="text-xs text-gray-500">Bookmarked jobs</p>
-        </div>
-        <div className="bg-green-50 p-4 rounded">
-          <h4 className="font-semibold text-green-800">Profile Views</h4>
-          <p className="text-2xl font-bold text-green-600">-</p>
-          <p className="text-xs text-gray-500">Feature coming soon</p>
         </div>
       </div>
 
@@ -347,14 +367,14 @@ const JobSeekerDashboard: React.FC = () => {
       <div className="mt-8 p-4 bg-gray-50 rounded">
         <h3 className="font-semibold mb-3">Quick Actions</h3>
         <div className="flex flex-wrap gap-3">
-          <Link 
-            to="/" 
+          <Link
+            to="/"
             className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
           >
             Browse More Jobs
           </Link>
-          <Link 
-            to="/profile" 
+          <Link
+            to="/profile"
             className="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 transition-colors"
           >
             Update Profile
