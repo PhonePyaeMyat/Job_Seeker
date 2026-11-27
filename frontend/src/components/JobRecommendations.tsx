@@ -84,6 +84,7 @@ const JobRecommendations: React.FC = () => {
     };
 
     loadRecommendations();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, userProfile]);
 
   const calculateRecommendations = (jobs: Job[], profile: UserProfile | null): Job[] => {

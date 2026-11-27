@@ -10,7 +10,6 @@ interface AdvancedJobSearchProps {
     company: string;
     remote: boolean;
     datePosted: string;
-    radius: string;
   }) => void;
 }
 
@@ -24,11 +23,7 @@ const AdvancedJobSearch = ({ onSearch }: AdvancedJobSearchProps) => {
     company: '',
     remote: false,
     datePosted: '',
-    radius: '25'
   });
-
-  console.log('Current filters state:', filters); // Debug log
-
 
   const [showAdvanced, setShowAdvanced] = useState(false);
 
@@ -39,16 +34,12 @@ const AdvancedJobSearch = ({ onSearch }: AdvancedJobSearchProps) => {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
-    
-    console.log('Input change:', name, value, type); // Debug log
-    
+
     setFilters(prev => {
-      const newFilters = {
+      return {
         ...prev,
         [name]: type === 'checkbox' ? (e.target as HTMLInputElement).checked : value
       };
-      console.log('New filters state:', newFilters); // Debug log
-      return newFilters;
     });
   };
 
@@ -62,7 +53,6 @@ const AdvancedJobSearch = ({ onSearch }: AdvancedJobSearchProps) => {
       company: '',
       remote: false,
       datePosted: '',
-      radius: '25'
     });
   };
 
@@ -240,25 +230,9 @@ const AdvancedJobSearch = ({ onSearch }: AdvancedJobSearchProps) => {
                 </select>
               </div>
 
-              {/* Radius */}
-              <div>
-                <label htmlFor="radius" className="block text-sm font-medium text-gray-700 mb-1">
-                  Radius (miles)
-                </label>
-                <select
-                  id="radius"
-                  name="radius"
-                  value={filters.radius}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900"
-                >
-                  <option value="5">5 miles</option>
-                  <option value="10">10 miles</option>
-                  <option value="25">25 miles</option>
-                  <option value="50">50 miles</option>
-                  <option value="100">100 miles</option>
-                </select>
-              </div>
+              {/* No radius filter: jobs carry no coordinates, so a radius
+                  cannot be computed honestly. It was removed rather than
+                  left as a control that does nothing. */}
             </div>
 
             {/* Remote Work Checkbox */}

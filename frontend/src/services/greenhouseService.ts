@@ -1,3 +1,5 @@
+import { auth } from '../firebaseConfig';
+
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://us-central1-job-seeker-80fd8.cloudfunctions.net/api';
 
 export interface GreenhouseSyncResponse {
@@ -14,10 +16,14 @@ export interface GreenhouseSyncResponse {
  */
 export const syncGreenhouseJobs = async (boardToken: string): Promise<GreenhouseSyncResponse> => {
   try {
+    // The sync endpoint is admin-only since Phase 1, so attach the
+    // caller's Firebase ID token. Without it the API returns 401.
+    const token = await auth.currentUser?.getIdToken();
     const response = await fetch(`${API_BASE_URL}/jobs/sync-greenhouse`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify({ boardToken }),
     });

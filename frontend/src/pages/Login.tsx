@@ -4,6 +4,7 @@ import { auth, db } from '../firebaseConfig';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuthState } from 'react-firebase-hooks/auth';
+import { getUserRole } from '../services/userService';
 
 const Login: React.FC = () => {
   const [formData, setFormData] = useState({
@@ -18,15 +19,17 @@ const Login: React.FC = () => {
   const navigate = useNavigate();
   const [user, userLoading] = useAuthState(auth);
 
-  // Redirect if already logged in
+  // Redirect if already logged in. The role is read from the Firestore
+  // user document — never from localStorage, which anyone can edit.
   useEffect(() => {
     if (user && !userLoading) {
-      const role = localStorage.getItem('role');
-      if (role === 'employer') {
-        navigate('/dashboard');
-      } else {
-        navigate('/');
-      }
+      let cancelled = false;
+      getUserRole(user.uid).then((role) => {
+        if (!cancelled) navigate(role === 'employer' ? '/dashboard' : '/');
+      });
+      return () => {
+        cancelled = true;
+      };
     }
   }, [user, userLoading, navigate]);
 
@@ -133,14 +136,9 @@ const Login: React.FC = () => {
         };
         
         await setDoc(userDocRef, userData);
-        localStorage.setItem('role', 'jobseeker');
-        window.dispatchEvent(new CustomEvent('roleChanged', { detail: { role: 'jobseeker' } }));
-      } else {
-        // User exists, set role from Firestore document
-        const existingData = userDoc.data();
-        localStorage.setItem('role', existingData?.role || 'jobseeker');
-        window.dispatchEvent(new CustomEvent('roleChanged', { detail: { role: existingData?.role || 'jobseeker' } }));
       }
+      // Existing users: the role is read from their Firestore document
+      // (see the redirect effect above); nothing is cached locally.
       
       // Navigation will be handled by useEffect
     } catch (error: any) {

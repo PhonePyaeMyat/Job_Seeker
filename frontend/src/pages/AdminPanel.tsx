@@ -7,21 +7,21 @@ import {
   doc, 
   updateDoc, 
   deleteDoc, 
-  query, 
-  orderBy, 
-  where,
+  query,
+  orderBy,
   limit,
   startAfter,
   DocumentSnapshot
 } from 'firebase/firestore';
 import { Link } from 'react-router-dom';
 import GreenhouseIntegration from '../components/GreenhouseIntegration';
+import { getUserRole } from '../services/userService';
 
 interface User {
   id: string;
   displayName: string;
   email: string;
-  role: 'jobseeker' | 'employer';
+  role: 'jobseeker' | 'employer' | 'admin';
   createdAt: string;
   updatedAt: string;
   bio?: string;
@@ -66,21 +66,33 @@ const AdminPanel: React.FC = () => {
   const [success, setSuccess] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<string>('all');
-  const [currentPage, setCurrentPage] = useState(0);
   const [lastDoc, setLastDoc] = useState<DocumentSnapshot | null>(null);
   const pageSize = 10;
 
-  // Check if current user is admin
-  const isAdmin = user?.email === 'admin@jobseeker.com' || user?.displayName === 'admin';
+  // Admin status comes from the Firestore user document (or the admins
+  // allowlist) via userService — never from the email address, the display
+  // name, or localStorage, all of which the user controls.
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-    if (!user || !isAdmin) {
+    if (!user) {
+      setIsAdmin(false);
       setLoading(false);
       return;
     }
-
-    loadInitialData();
-  }, [user, isAdmin]);
+    let cancelled = false;
+    getUserRole(user.uid).then((role) => {
+      if (cancelled) return;
+      const admin = role === 'admin';
+      setIsAdmin(admin);
+      if (admin) loadInitialData();
+      else setLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
 
   const loadInitialData = async () => {
     try {
@@ -597,6 +609,18 @@ const AdminPanel: React.FC = () => {
                               >
                                 Delete
                               </button>
+                              {/* Promote is how new admins are created now
+                                  that admin self-sign-up is removed. The
+                                  promote action itself is enforced by the
+                                  Firestore rules (admins only). */}
+                              {user.role !== 'admin' && (
+                                <button
+                                  onClick={() => handleUserAction(user.id, 'promote')}
+                                  className="text-blue-600 hover:text-blue-800 text-xs bg-blue-100 px-2 py-1 rounded"
+                                >
+                                  Promote
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { auth } from '../firebaseConfig';
-import { getJobById, applyToJob } from '../services/jobService';
+import { getJobById } from '../services/jobService';
 import ApplicationModal from './ApplicationModal';
 
 interface Job {
@@ -28,7 +28,6 @@ const JobDetails: React.FC = () => {
   const [job, setJob] = useState<Job | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [applying, setApplying] = useState(false);
   const [applyMsg, setApplyMsg] = useState('');
   const [showApplicationModal, setShowApplicationModal] = useState(false);
   const [user, userLoading] = useAuthState(auth);
@@ -192,16 +191,11 @@ const JobDetails: React.FC = () => {
                 hasApplied 
                   ? 'bg-green-100 text-green-800 cursor-not-allowed'
                   : 'bg-blue-600 text-white hover:bg-blue-700'
-              } ${applying ? 'opacity-50 cursor-not-allowed' : ''}`}
+              }`}
               onClick={handleApply}
-              disabled={applying || userLoading || hasApplied}
+              disabled={userLoading || hasApplied}
             >
-              {applying ? (
-                <span className="flex items-center gap-2">
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                  Applying...
-                </span>
-              ) : hasApplied ? (
+              {hasApplied ? (
                 '✓ Applied'
               ) : (
                 'Apply Now'
